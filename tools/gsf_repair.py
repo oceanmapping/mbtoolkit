@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-gsf-repair.py - Repair a GSF file to comply with a minimal profile.
+gsf_repair.py - Repair a GSF file to comply with a minimal profile.
 
 This tool repairs GSF files by adding missing required subrecords as empty
 subrecords, ensuring the file complies with a specified profile definition.

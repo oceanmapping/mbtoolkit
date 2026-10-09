@@ -25,13 +25,13 @@ This will install:
 
 The toolkit provides several command-line tools for working with GSF files:
 
-### gsf-info.py
+### gsf_info.py
 
 Inspect GSF files and print information based on flags.
 
 **Usage:**
 ```bash
-python tools/gsf-info.py <filename> [options]
+python tools/gsf_info.py <filename> [options]
 ```
 
 **Options:**
@@ -46,49 +46,49 @@ python tools/gsf-info.py <filename> [options]
 
 **Example:**
 ```bash
-python tools/gsf-info.py data/sample.gsf --summary --positions
+python tools/gsf_info.py data/sample.gsf --summary --positions
 ```
 
-### gsf-verify.py
+### gsf_verify.py
 
 Validate a GSF file against a profile JSON.
 
 **Usage:**
 ```bash
-python tools/gsf-verify.py <profile> <gsf_file>
+python tools/gsf_verify.py <profile> <gsf_file>
 ```
 
 **Example:**
 ```bash
-python tools/gsf-verify.py profiles/xyz.json data/sample.gsf
+python tools/gsf_verify.py profiles/xyz.json data/sample.gsf
 ```
 
-### gsf-repair.py
+### gsf_repair.py
 
 Repair a GSF file to comply with a minimal profile (e.g., missing subrecords).
 
 **Usage:**
 ```bash
-python tools/gsf-repair.py <profile> <infile> --out <output_file>
+python tools/gsf_repair.py <profile> <infile> --out <output_file>
 ```
 
 **Example:**
 ```bash
-python tools/gsf-repair.py profiles/xyz.json data/sample.gsf --out data/repaired.gsf
+python tools/gsf_repair.py profiles/xyz.json data/sample.gsf --out data/repaired.gsf
 ```
 
-### gsf-timecheck.py
+### gsf_timecheck.py
 
 Verify that SWATH_BATHYMETRY and ATTITUDE records are strictly time-increasing.
 
 **Usage:**
 ```bash
-python tools/gsf-timecheck.py <filename>
+python tools/gsf_timecheck.py <filename>
 ```
 
 **Example:**
 ```bash
-python tools/gsf-timecheck.py data/sample.gsf
+python tools/gsf_timecheck.py data/sample.gsf
 ```
 
 ## Profiles
@@ -106,19 +106,19 @@ The toolkit uses JSON profile files to define validation rules. Available profil
 1. Choose an appropriate profile
 2. Run verification:
    ```bash
-   python tools/gsf-verify.py profiles/xyz.json your_file.gsf
+   python tools/gsf_verify.py profiles/xyz.json your_file.gsf
    ```
 
 ### Inspecting File Contents
 
 ```bash
-python tools/gsf-info.py your_file.gsf --summary --positions
+python tools/gsf_info.py your_file.gsf --summary --positions
 ```
 
 ### Checking Time Ordering
 
 ```bash
-python tools/gsf-timecheck.py your_file.gsf
+python tools/gsf_timecheck.py your_file.gsf
 ```
 
 ## Troubleshooting
@@ -127,7 +127,7 @@ python tools/gsf-timecheck.py your_file.gsf
 
 If you see import errors, run commands from the repository root so `readers/base` is importable:
 ```bash
-python tools/gsf-info.py data/sample.gsf --summary
+python tools/gsf_info.py data/sample.gsf --summary
 ```
 
 ### File Not Found

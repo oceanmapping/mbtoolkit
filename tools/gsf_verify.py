@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-gsf-verify.py - Validate a GSF file against a profile JSON.
+gsf_verify.py - Validate a GSF file against a profile JSON.
 
 This tool validates GSF files against JSON profile definitions, checking for
 required records, header fields, subrecords, and constraints.

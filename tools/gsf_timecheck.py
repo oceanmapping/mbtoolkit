@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-gsf-timeCheck.py
+gsf_timecheck.py
 
 Quick check that SWATH_BATHYMETRY and ATTITUDE records in a GSF
 file are strictly time‑increasing.  Prints any out‑of‑order hits

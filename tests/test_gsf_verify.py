@@ -3,6 +3,7 @@ Tests for gsf-verify functionality.
 """
 import pytest
 import json
+import os
 import tempfile
 from tools.gsf_verify import load_profile, attr_map
 

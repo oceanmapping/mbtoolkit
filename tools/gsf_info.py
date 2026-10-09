@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-gsf-info.py - Inspect GSF files and print information based on flags.
+gsf_info.py - Inspect GSF files and print information based on flags.
 
 This tool provides various options to inspect and analyze GSF (Generic Sensor Format)
 files, including datagram summaries, ping headers, depth statistics, and attitude records.
