@@ -42,8 +42,8 @@
         "required_subrecords": [
           { "subrecord_name": "ScaleFactors",        "subrecord_id": 100 },
           { "subrecord_name": "DepthArray",           "subrecord_id":   1 },
-          { "subrecord_name": "AcrossTrackArray",     "subrecord_id":   3 },
-          { "subrecord_name": "AlongTrackArray",      "subrecord_id":   4 }
+          { "subrecord_name": "AcrossTrackArray",     "subrecord_id":   2 },
+          { "subrecord_name": "AlongTrackArray",      "subrecord_id":   3 }
         ],
         "recommended_encoding": {
           "ScaleFactors":      { "apply_to": [1,3,4], "multiplier": 100, "offset": 0,   "field_size_bytes": 2 },

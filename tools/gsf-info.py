@@ -34,41 +34,44 @@ except ImportError:
 # ------------------------------------------------------------------------------
 # Mapping of SWATH_BATHY subrecord IDs → names/attribute keys on datagram
 #
-# This dictionary maps subrecord ID numbers to their corresponding attribute
-# names as used in the bundled GSF reader. Used for displaying subrecord information
-# in verbose output modes.
+# This dictionary maps subrecord ID numbers to their names, which are the
+# GSF_SWATH_BATHY_SUBRECORD_* constants in the GSF 3.11 library's gsf.h with
+# that prefix removed. The bundled GSF reader uses the same names for the
+# attributes it decodes, so they also serve as attribute keys on the datagram.
+# Used for displaying subrecord information in verbose output modes.
 subrecord_names = {
     100: "SCALE_FACTORS",
     1:   "DEPTH_ARRAY",
-    2:   "NOMINAL_DEPTH_ARRAY",
-    3:   "ACROSS_TRACK_ARRAY",
-    4:   "ALONG_TRACK_ARRAY",
-    5:   "TRAVEL_TIME_ARRAY",
-    6:   "BEAM_ANGLE_ARRAY",
-    7:   "MEAN_CALIBRATED_AMPLITUDE_ARRAY",
-    8:   "MEAN_RELATIVE_AMPLITUDE_ARRAY",
-    9:   "ECHO_WIDTH_ARRAY",
-    10:  "QUALITY_FACTOR_ARRAY",
-    11:  "RECEIVE_HEAVE_ARRAY",
-    12:  "DEPTH_ERROR_ARRAY",
-    13:  "ACROSS_TRACK_ERROR_ARRAY",
-    14:  "ALONG_TRACK_ERROR_ARRAY",
-    15:  "BEAM_FLAGS_ARRAY",
-    16:  "QUALITY_FLAGS_ARRAY",
+    2:   "ACROSS_TRACK_ARRAY",
+    3:   "ALONG_TRACK_ARRAY",
+    4:   "TRAVEL_TIME_ARRAY",
+    5:   "BEAM_ANGLE_ARRAY",
+    6:   "MEAN_CAL_AMPLITUDE_ARRAY",
+    7:   "MEAN_REL_AMPLITUDE_ARRAY",
+    8:   "ECHO_WIDTH_ARRAY",
+    9:   "QUALITY_FACTOR_ARRAY",
+    10:  "RECEIVE_HEAVE_ARRAY",
+    11:  "DEPTH_ERROR_ARRAY",
+    12:  "ACROSS_TRACK_ERROR_ARRAY",
+    13:  "ALONG_TRACK_ERROR_ARRAY",
+    14:  "NOMINAL_DEPTH_ARRAY",
+    15:  "QUALITY_FLAGS_ARRAY",
+    16:  "BEAM_FLAGS_ARRAY",
     17:  "SIGNAL_TO_NOISE_ARRAY",
     18:  "BEAM_ANGLE_FORWARD_ARRAY",
     19:  "VERTICAL_ERROR_ARRAY",
     20:  "HORIZONTAL_ERROR_ARRAY",
-    21:  "SECTOR_NUMBER_ARRAY",
-    22:  "DETECTION_INFO_ARRAY",
-    23:  "INCIDENT_BEAM_ADJUSTMENT_ARRAY",
-    24:  "SYSTEM_CLEANING_ARRAY",
-    25:  "DOPPLER_CORRECTION_ARRAY",
-    26:  "SONAR_VERTICAL_UNCERTAINTY_ARRAY",
-    27:  "SONAR_HORIZONTAL_UNCERTAINTY_ARRAY",
-    28:  "DETECTION_WINDOW_ARRAY",
-    29:  "MEAN_ABS_COEFF_ARRAY",
-    30:  "TVG_DB_ARRAY",
+    21:  "INTENSITY_SERIES_ARRAY",
+    22:  "SECTOR_NUMBER_ARRAY",
+    23:  "DETECTION_INFO_ARRAY",
+    24:  "INCIDENT_BEAM_ADJ_ARRAY",
+    25:  "SYSTEM_CLEANING_ARRAY",
+    26:  "DOPPLER_CORRECTION_ARRAY",
+    27:  "SONAR_VERT_UNCERT_ARRAY",
+    28:  "SONAR_HORZ_UNCERT_ARRAY",
+    29:  "DETECTION_WINDOW_ARRAY",
+    30:  "MEAN_ABS_COEF_ARRAY",
+    31:  "TVG_ARRAY",
     # sensor‑specific IDs omitted for brevity...
 }
 

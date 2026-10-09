@@ -38,12 +38,12 @@
           },
           {
             "subrecord_name": "AcrossTrackArray",
-            "subrecord_id": 3,
+            "subrecord_id": 2,
             "description": "Y offsets for each beam"
           },
           {
             "subrecord_name": "AlongTrackArray",
-            "subrecord_id": 4,
+            "subrecord_id": 3,
             "description": "X offsets for each beam"
           }
         ],
