@@ -7,10 +7,10 @@ This guide is for developers who want to understand, modify, or extend the Commu
 ```
 mb-community-toolkit/
 ├── tools/             # Command-line tools
-│   ├── gsf-info.py
-│   ├── gsf-verify.py
-│   ├── gsf-repair.py
-│   └── gsf-timecheck.py
+│   ├── gsf_info.py
+│   ├── gsf_verify.py
+│   ├── gsf_repair.py
+│   └── gsf_timecheck.py
 ├── profiles/          # JSON validation profiles
 │   ├── xyz.json
 │   ├── singlebeam.json
@@ -24,7 +24,7 @@ mb-community-toolkit/
 
 ### Prerequisites
 
-- Python 3.7+
+- Python 3.8+
 - pip
 - Git
 
@@ -40,7 +40,7 @@ mb-community-toolkit/
    ```bash
    pip install -r requirements.txt
    ```
-   No git submodules are required; the reader implementation is bundled in `readers/base`.
+   This installs [gsfu](https://pypi.org/project/gsfu/), the library the tools read GSF files with.
 
 3. (Optional) Install in development mode if creating a package structure
 
@@ -48,13 +48,13 @@ mb-community-toolkit/
 
 ### Core Components
 
-- **GSF Reader**: Uses the bundled `readers/base` implementation to read GSF data
+- **GSF Reader**: Uses the `gsfu` library to read GSF data
 - **Profile System**: JSON-based validation profiles define required records and subrecords
 - **Command Tools**: Standalone scripts for specific operations
 
 ### Key Dependencies
 
-- `readers/base`: bundled GSF reader implementation
+- `gsfu`: GSF reader and writer (https://pypi.org/project/gsfu/)
 - `numpy`: Numerical operations for array processing
 
 ## Code Organization
@@ -62,10 +62,10 @@ mb-community-toolkit/
 ### Scripts (`tools/`)
 
 Each script is a standalone command-line tool:
-- `gsf-info.py`: File inspection and information extraction
-- `gsf-verify.py`: Profile-based validation
-- `gsf-repair.py`: File repair and compliance fixing
-- `gsf-timecheck.py`: Time ordering verification
+- `gsf_info.py`: File inspection and information extraction
+- `gsf_verify.py`: Profile-based validation
+- `gsf_repair.py`: File copying with a report of unmet profile requirements
+- `gsf_timecheck.py`: Time ordering verification
 
 ### Profiles (`profiles/`)
 
@@ -92,18 +92,18 @@ JSON files defining validation rules:
 1. Create JSON file in `profiles/`
 2. Define required records and subrecords
 3. Specify constraints and encoding recommendations
-4. Test with `gsf-verify.py`
+4. Test with `gsf_verify.py`
 
 ### Common Patterns
 
 **Reading GSF Files:**
 ```python
-from readers.base import GSFREADER, SWATH_BATHYMETRY
+from GSFU import gsf
 
-reader = GSFREADER("file.gsf")
-while reader.moreData():
-    nbytes, recid, dg = reader.readDatagram()
-    # Process datagram
+reader = gsf("file.gsf")
+for record_type, offset, record in reader.iter_records("SWATH_BATHYMETRY_PING"):
+    depths = record["Beams"]["Depth_m"]  # None if the ping has no depth array
+    # Process the ping
 ```
 
 **Profile Loading:**
@@ -142,14 +142,18 @@ pytest -v
 
 The `tests/` directory contains:
 - `test_utils.py` - Tests for utility functions
+- `test_gsf_info.py` - Tests for gsf-info
 - `test_gsf_verify.py` - Tests for profile loading and validation
 - `test_gsf_repair.py` - Tests for repair functionality
+- `test_gsf_timecheck.py` - Tests for time-order checking
+- `gsf_files.py` - Helpers that build synthetic GSF files, so no sample data is needed
 - `conftest.py` - Shared pytest fixtures
 
 ### Writing Tests
 
 1. Create test files following the pattern `test_*.py`
-2. Use pytest fixtures from `conftest.py` when available
+2. Use pytest fixtures from `conftest.py` when available, such as `make_gsf` to write a
+   synthetic GSF file
 3. Follow existing test structure and naming conventions
 4. See `tests/README.md` for more details
 
@@ -157,7 +161,7 @@ The `tests/` directory contains:
 
 Test with sample GSF files in `data/` directory:
 ```bash
-python tools/gsf-verify.py profiles/xyz.json data/sample.gsf
+python tools/gsf_verify.py profiles/xyz.json data/sample.gsf
 ```
 
 ### Test Files
@@ -181,13 +185,13 @@ python tools/gsf-verify.py profiles/xyz.json data/sample.gsf
 
 ### Common Issues
 
-- **Import errors**: Run tools from the repository root so `readers/base` is importable
+- **Import errors**: Install the dependencies with `pip install -r requirements.txt`
 - **File format errors**: Verify GSF file integrity
 - **Profile validation**: Check JSON syntax and structure
 
 ### Debug Tips
 
-- Use `--pingHeaderVerbose` in `gsf-info.py` for detailed inspection
+- Use `--pingHeaderVerbose` in `gsf_info.py` for detailed inspection
 - Check raw file structure with hex dump if needed
 - Validate profile JSON syntax separately
 

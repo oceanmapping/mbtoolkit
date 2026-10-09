@@ -43,10 +43,24 @@ pytest --cov=tools --cov-report=html
 
 ## Test Structure
 
-- `test_utils.py` - Tests for utility functions (scan_subrecords, scan_subrecord_ids)
-- `test_gsf_verify.py` - Tests for profile loading and validation utilities
+- `test_utils.py` - Tests for utility functions (subrecord scanning, time conversion, and the
+  missing-subrecord check)
+- `test_gsf_info.py` - Tests for gsf-info's output options
+- `test_gsf_verify.py` - Tests for profile loading and validation
 - `test_gsf_repair.py` - Tests for repair functionality
+- `test_gsf_timecheck.py` - Tests for time-order checking
+- `test_gsf_files.py` - Tests for the synthetic GSF file helpers
+- `gsf_files.py` - Helpers that build small GSF files for the tests
 - `conftest.py` - Shared pytest fixtures and configuration
+
+## Test Data
+
+The tests need no sample data files. They build small, synthetic GSF files
+with the helpers in `gsf_files.py`, which write pings and attitude records
+through the gsfu library. The `make_gsf` fixture writes such a file in a
+temporary directory, and `compliant_gsf` provides a well-formed one.
+`remove_subrecord()` and `insert_subrecord()` edit a written file to make
+pings gsfu would never write, such as one without scale factors.
 
 ## Writing New Tests
 

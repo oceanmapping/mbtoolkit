@@ -5,5 +5,6 @@
 # Core dependencies
 numpy>=1.20.0
 
-# GSF reader implementation is included in readers/base
+# GSF file reading and writing (https://pypi.org/project/gsfu/)
+gsfu>=0.5.1
 

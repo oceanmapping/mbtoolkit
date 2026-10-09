@@ -40,22 +40,24 @@ An open-source suite of verification, conversion, and best-practice tools for Ge
    ```bash
    pip install -r requirements.txt
    ```
-   The toolkit uses the bundled reader implementation in `readers/base`.
+   The toolkit reads and writes GSF files with the [gsfu](https://pypi.org/project/gsfu/)
+   library, which this installs.
 4. Verify a GSF file
    ```
-   python ./tools/gsf-verify.py minimal-xyz.json path/to/data.gsf # see ./profiles
+   python ./tools/gsf_verify.py minimal-xyz.json path/to/data.gsf # see ./profiles
    ```
 5. Explore content of a GSF file
    ```
-   python ./tools/gsf-info.py path/to/data.gsf --list --attitude
+   python ./tools/gsf_info.py path/to/data.gsf --list --attitude
    ```
 6. Verifies that bathy and attitude records have strictly time-increasing timestamps
    ```
-   python ./tools/gsf-timecheck.py path/to/data.gsf
+   python ./tools/gsf_timecheck.py path/to/data.gsf
    ```
-7. Repairs a GSF file by adding missing required subrecords as empty subrecords.
+7. Copies a GSF file and reports the pings that lack subrecords a profile requires.
+   (It no longer pads them with empty subrecords, which GSF readers misread.)
    ```
-   python ./tools/gsf-repair.py minimal-xyz.json path/to/data.gsf -o path/to/data_fixed.gsf
+   python ./tools/gsf_repair.py minimal-xyz.json path/to/data.gsf -o path/to/data_fixed.gsf
    ```
 
 # Contributing

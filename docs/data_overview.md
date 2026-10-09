@@ -46,13 +46,13 @@ Below is an example of how data files are documented:
 **Usage:**
 ```bash
 # Verify against multibeam profile
-python tools/gsf-verify.py profiles/multibeam.json 0000_20220928_150917_EM2040.gsf
+python tools/gsf_verify.py profiles/multibeam.json 0000_20220928_150917_EM2040.gsf
 
 # Inspect file contents
-python tools/gsf-info.py 0000_20220928_150917_EM2040.gsf --summary
+python tools/gsf_info.py 0000_20220928_150917_EM2040.gsf --summary
 
 # Check time ordering
-python tools/gsf-timecheck.py 0000_20220928_150917_EM2040.gsf
+python tools/gsf_timecheck.py 0000_20220928_150917_EM2040.gsf
 ```
 
 **Location:** [External data repository URL or local path]

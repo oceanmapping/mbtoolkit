@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-gsf-timeCheck.py
+gsf_timecheck.py
 
 Quick check that SWATH_BATHYMETRY and ATTITUDE records in a GSF
 file are strictly time‑increasing.  Prints any out‑of‑order hits
@@ -10,13 +10,17 @@ and a final summary.
 import argparse
 import os
 import sys
-from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
+from GSFU import RecordType, gsf
 
-from readers.base import GSFREADER, SWATH_BATHYMETRY, ATTITUDE
+# Import utility functions - handle both relative and absolute imports
+try:
+    from .utils import posix_seconds
+except ImportError:
+    # Fallback for when script is run directly
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).parent))
+    from utils import posix_seconds
 
 def parse_args() -> argparse.Namespace:
     """
@@ -48,7 +52,7 @@ def main() -> None:
         print(f"Error: File '{args.filename}' not found.", file=sys.stderr)
         sys.exit(1)
 
-    reader = GSFREADER(args.filename)
+    reader = gsf(args.filename)
 
     # Ping counters
     total_pings       = 0
@@ -64,20 +68,21 @@ def main() -> None:
     last_att_ts       = None
     prev_att_ts       = -float("inf")
 
-    while reader.moreData():
+    # Walk every record in file order, so that any out-of-order reports
+    # appear in the order the records occur.
+    records = reader.iter_records()
+    while True:
         try:
-            nbytes, recid, dg = reader.readDatagram()
+            record_type, _offset, record = next(records)
+        except StopIteration:
+            break
         except Exception as e:
             print(f"[ERROR] reading datagram: {e}", file=sys.stderr)
             break
 
-        # SWATH bathy ping → only read header (fast)
-        if recid == SWATH_BATHYMETRY:
+        if record_type == RecordType.GSF_RECORD_SWATH_BATHYMETRY_PING:
             total_pings += 1
-
-            # read header only (so dg.timestamp is set, nothing more)
-            reader.scalefactorsd = dg.read(reader.scalefactorsd, True)
-            ts = dg.timestamp
+            ts = posix_seconds(record["PingTime"])
 
             if first_ping_ts is None:
                 first_ping_ts = ts
@@ -89,17 +94,14 @@ def main() -> None:
             prev_ping_ts = ts
             last_ping_ts = ts
 
-        # ATTITUDE record → full read to get dg.ts[]
-        elif recid == ATTITUDE:
+        elif record_type == RecordType.GSF_RECORD_ATTITUDE:
             total_att += 1
+            times = posix_seconds(record["Time"])
 
-            # Note: ATTITUDE.read() takes no args
-            dg.read()
-
-            # only if ts array exists and has elements
-            if hasattr(dg, "ts") and len(dg.ts) > 0:
-                first_sample = dg.ts[0]
-                last_sample  = dg.ts[-1]
+            # Only records holding at least one measurement have times to compare.
+            if len(times) > 0:
+                first_sample = times[0]
+                last_sample  = times[-1]
 
                 if first_att_ts is None:
                     first_att_ts = first_sample
