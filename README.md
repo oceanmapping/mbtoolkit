@@ -1,7 +1,7 @@
 # Overview
 
 Community Multibeam Toolkit
-An open-source suite of verification, conversion, and best-practice tools for the multibeam data, including Generic Sensor Format (GSF). Our mission is to launch and foster an active user & developer community around a common processing formats for bathymetry and sonar data.
+An open-source suite of verification, conversion, and best-practice tools for Generic Sensor Format (GSF) data. Our mission is to launch and foster an active user & developer community around a common processing formats for bathymetry and sonar data.
 
 ## Vision & Goals
 
@@ -17,12 +17,10 @@ An open-source suite of verification, conversion, and best-practice tools for th
 - Deliver verification tools to validate existing (legacy) GSF files
 - Provide conversion utilities to modernize or migrate legacy formats into GSF
 - Encourage community contributions, plug-ins, and extensions
-
 ## Roadmap
 - Initial release of conversion & verification tools
 - Community engagement: hackathons, virtual meetups, and online discussions
-
-### Beyond 2025
+### Future
 - Expanded profile/check suites (minimal-XYZ, full-multibeam, single-beam-in-swath)
 - Promote integrations with GIS and hydrographic software
 - Comprehensive tutorials, reference datasets, and best-practice guides
