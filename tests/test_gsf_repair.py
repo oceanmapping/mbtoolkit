@@ -74,7 +74,7 @@ def test_repair_inherited_scale_factors(tmp_path, bad_payload, require_sf, expec
     }]}}))
 
     result = subprocess.run(
-        [sys.executable, str(Path(__file__).resolve().parents[1] / "tools/gsf-repair.py"),
+        [sys.executable, str(Path(__file__).resolve().parents[1] / "tools/gsf_repair.py"),
          str(profile), str(source), "--out", str(target)],
         capture_output=True, text=True, check=True,
     )

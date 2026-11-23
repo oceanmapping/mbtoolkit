@@ -173,7 +173,7 @@ if subrecord_size % 4 > 0:
 
 Correct imagery skip and sample stride should make this unnecessary. If padding is ever required, derive it from parsed byte count vs `subrecord_size`.
 
-### 5. `gsf-info.py` reporting (optional)
+### 5. `gsf_info.py` reporting (optional)
 
 When subrecord 21 is present, report:
 

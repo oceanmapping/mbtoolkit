@@ -36,7 +36,7 @@ def test_reporting_modes(tmp_path, options, expected_sections):
     )
     source = tmp_path / "sample.gsf"
     source.write_bytes(header + struct.pack(">II", len(payload), 2) + payload)
-    script = Path(__file__).resolve().parents[1] / "tools/gsf-info.py"
+    script = Path(__file__).resolve().parents[1] / "tools/gsf_info.py"
 
     result = subprocess.run(
         [sys.executable, str(script), str(source)] + options,

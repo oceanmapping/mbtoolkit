@@ -61,7 +61,7 @@ Repository = "https://github.com/your-org/community-gsf-toolkit"
 Issues = "https://github.com/your-org/community-gsf-toolkit/issues"
 
 [tool.setuptools]
-packages = ["tools"]
+packages = ["tools", "readers", "readers.base"]
 include-package-data = true
 
 [tool.black]
