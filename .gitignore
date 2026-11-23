@@ -1,1 +1,7 @@
+# Generated Python caches
 __pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local GSF sample data
+/data/
