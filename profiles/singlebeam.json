@@ -46,7 +46,7 @@
           { "subrecord_name": "AlongTrackArray",      "subrecord_id":   3 }
         ],
         "recommended_encoding": {
-          "ScaleFactors":      { "apply_to": [1,3,4], "multiplier": 100, "offset": 0,   "field_size_bytes": 2 },
+          "ScaleFactors":      { "apply_to": [1,2,3], "multiplier": 100, "offset": 0,   "field_size_bytes": 2 },
           "DepthArray":        { "precision_m": 0.01,  "offset_m": 0.0,   "bytes": 2 },
           "AcrossTrackArray":  { "precision_m": 0.01,  "offset_m": 0.0,   "bytes": 2 },
           "AlongTrackArray":   { "precision_m": 0.01,  "offset_m": 0.0,   "bytes": 2 }

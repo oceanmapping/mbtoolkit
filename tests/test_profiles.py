@@ -87,3 +87,18 @@ class TestProfileSubrecordIds:
                 sub["subrecord_id"] not in ids
             ), f"Record {record_id}: subrecord ID {sub['subrecord_id']} is listed twice"
             ids.append(sub["subrecord_id"])
+
+
+def test_singlebeam_scale_factor_targets_match_required_arrays():
+    """Keep recommended scaling in sync with the profile's required beam arrays."""
+    with open(PROFILES_DIR / "singlebeam.json", "r") as f:
+        profile = json.load(f)["profile"]
+    ping = next(record for record in profile["required_records"] if record["record_id"] == 2)
+    array_ids = {
+        GSF_SUBRECORD_IDS[sub["subrecord_name"]]
+        for sub in ping["required_subrecords"]
+        if sub["subrecord_name"] != "ScaleFactors"
+    }
+    targets = ping["recommended_encoding"]["ScaleFactors"]["apply_to"]
+    assert set(targets) == array_ids
+    assert len(targets) == len(array_ids)

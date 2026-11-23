@@ -43,19 +43,19 @@ An open-source suite of verification, conversion, and best-practice tools for Ge
    The toolkit uses the bundled reader implementation in `readers/base`.
 4. Verify a GSF file
    ```
-   python ./tools/gsf-verify.py minimal-xyz.json path/to/data.gsf # see ./profiles
+   python ./tools/gsf_verify.py minimal-xyz.json path/to/data.gsf # see ./profiles
    ```
 5. Explore content of a GSF file
    ```
-   python ./tools/gsf-info.py path/to/data.gsf --list --attitude
+   python ./tools/gsf_info.py path/to/data.gsf --list --attitude
    ```
 6. Verifies that bathy and attitude records have strictly time-increasing timestamps
    ```
-   python ./tools/gsf-timecheck.py path/to/data.gsf
+   python ./tools/gsf_timecheck.py path/to/data.gsf
    ```
 7. Repairs a GSF file by adding missing required subrecords as empty subrecords.
    ```
-   python ./tools/gsf-repair.py minimal-xyz.json path/to/data.gsf -o path/to/data_fixed.gsf
+   python ./tools/gsf_repair.py minimal-xyz.json path/to/data.gsf -o path/to/data_fixed.gsf
    ```
 
 # Contributing

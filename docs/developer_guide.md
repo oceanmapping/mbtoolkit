@@ -7,10 +7,10 @@ This guide is for developers who want to understand, modify, or extend the Commu
 ```
 mb-community-toolkit/
 ├── tools/             # Command-line tools
-│   ├── gsf-info.py
-│   ├── gsf-verify.py
-│   ├── gsf-repair.py
-│   └── gsf-timecheck.py
+│   ├── gsf_info.py
+│   ├── gsf_verify.py
+│   ├── gsf_repair.py
+│   └── gsf_timecheck.py
 ├── profiles/          # JSON validation profiles
 │   ├── xyz.json
 │   ├── singlebeam.json
@@ -62,10 +62,10 @@ mb-community-toolkit/
 ### Scripts (`tools/`)
 
 Each script is a standalone command-line tool:
-- `gsf-info.py`: File inspection and information extraction
-- `gsf-verify.py`: Profile-based validation
-- `gsf-repair.py`: File repair and compliance fixing
-- `gsf-timecheck.py`: Time ordering verification
+- `gsf_info.py`: File inspection and information extraction
+- `gsf_verify.py`: Profile-based validation
+- `gsf_repair.py`: File repair and compliance fixing
+- `gsf_timecheck.py`: Time ordering verification
 
 ### Profiles (`profiles/`)
 
@@ -92,7 +92,7 @@ JSON files defining validation rules:
 1. Create JSON file in `profiles/`
 2. Define required records and subrecords
 3. Specify constraints and encoding recommendations
-4. Test with `gsf-verify.py`
+4. Test with `gsf_verify.py`
 
 ### Common Patterns
 
@@ -157,7 +157,7 @@ The `tests/` directory contains:
 
 Test with sample GSF files in `data/` directory:
 ```bash
-python tools/gsf-verify.py profiles/xyz.json data/sample.gsf
+python tools/gsf_verify.py profiles/xyz.json data/sample.gsf
 ```
 
 ### Test Files
@@ -187,7 +187,7 @@ python tools/gsf-verify.py profiles/xyz.json data/sample.gsf
 
 ### Debug Tips
 
-- Use `--pingHeaderVerbose` in `gsf-info.py` for detailed inspection
+- Use `--pingHeaderVerbose` in `gsf_info.py` for detailed inspection
 - Check raw file structure with hex dump if needed
 - Validate profile JSON syntax separately
 
