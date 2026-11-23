@@ -43,10 +43,16 @@ python tools/gsf-info.py <filename> [options]
 - `--summary` - Print summary of datagram counts
 - `--pingHeader` - Print full SWATH_BATHYMETRY ping headers
 - `--pingHeaderVerbose` - Print ping headers + decoded sub-record payloads
+- `--scaleFactors` - Analyze SCALE_FACTORS subrecords across pings and flag oddities
 
 **Example:**
 ```bash
 python tools/gsf-info.py data/sample.gsf --summary --positions
+```
+
+**Scale-factor example:**
+```bash
+python tools/gsf-info.py data/sample.gsf --scaleFactors
 ```
 
 ### gsf-verify.py
@@ -65,12 +71,23 @@ python tools/gsf-verify.py profiles/xyz.json data/sample.gsf
 
 ### gsf-repair.py
 
-Repair a GSF file to comply with a minimal profile (e.g., missing subrecords).
+Repair a GSF file to comply with a minimal profile, and fix SCALE_FACTORS issues.
 
 **Usage:**
 ```bash
 python tools/gsf-repair.py <profile> <infile> --out <output_file>
 ```
+
+**What it repairs:**
+- Missing required subrecords from the profile (added as empty subrecords)
+- Missing SCALE_FACTORS entries for beam arrays that GSF 3.05 scales
+  (depth, across/along, travel time, angles, mean amplitudes, etc.)
+- Unreasonable SCALE_FACTORS values on those arrays (zero multiplier, extreme mult/offset, bad field size)
+
+Note: `INTENSITY_SERIES_ARRAY` (BRB intensity) is not repaired via SCALE_FACTORS;
+per GSF 3.05 those samples are stored as integer dB in a structured subrecord.
+
+SCALE_FACTORS repair is on by default. Disable with `--no-fix-scale-factors`.
 
 **Example:**
 ```bash

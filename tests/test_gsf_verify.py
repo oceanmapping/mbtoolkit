@@ -4,7 +4,13 @@ Tests for gsf-verify functionality.
 import pytest
 import json
 import tempfile
-from tools.gsf_verify import load_profile, attr_map
+import os
+import runpy
+from pathlib import Path
+
+_verify = runpy.run_path(str(Path(__file__).resolve().parents[1] / "tools/gsf-verify.py"))
+load_profile = _verify["load_profile"]
+attr_map = _verify["attr_map"]
 
 
 class TestLoadProfile:
