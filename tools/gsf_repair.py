@@ -26,26 +26,26 @@ from readers.base import GSFREADER, SWATH_BATHYMETRY
 try:
     from .utils import (
         REQUIRED_SCALE_FACTOR_ARRAY_IDS,
+        datagram_header_size,
         factors_to_map,
         make_empty_subrecord,
         parse_scale_factors,
         repair_scale_factor_set,
         replace_or_insert_scale_factors,
         scale_factor_fingerprint,
-        scan_subrecord_ids,
         scan_subrecords,
     )
 except ImportError:
     sys.path.insert(0, str(Path(__file__).parent))
     from utils import (
         REQUIRED_SCALE_FACTOR_ARRAY_IDS,
+        datagram_header_size,
         factors_to_map,
         make_empty_subrecord,
         parse_scale_factors,
         repair_scale_factor_set,
         replace_or_insert_scale_factors,
         scale_factor_fingerprint,
-        scan_subrecord_ids,
         scan_subrecords,
     )
 
@@ -151,13 +151,20 @@ def main() -> None:
             # --- profile-driven empty subrecord repair ---
             if SWATH_BATHYMETRY in ping_rules:
                 required = ping_rules[SWATH_BATHYMETRY]
-                present_ids = scan_subrecord_ids(raw, ping_hdr_size)
+                present_subs = scan_subrecords(raw, ping_hdr_size)
+                present_ids = {sid for sid, _ in present_subs}
                 missing = [
                     (sid, name) for sid, name in required if sid not in present_ids
                 ]
                 if missing:
-                    for sid, _name in missing:
-                        raw += make_empty_subrecord(sid)
+                    # Insert before arrays and trailing padding. Appending at the
+                    # record end can hide new headers in padding or extend a
+                    # terminal subrecord whose declared size exceeds the record.
+                    insert_at = datagram_header_size(raw) + ping_hdr_size
+                    if present_subs and present_subs[0][0] == 100:
+                        insert_at += 4 + len(present_subs[0][1])
+                    additions = b"".join(make_empty_subrecord(sid) for sid, _name in missing)
+                    raw = raw[:insert_at] + additions + raw[insert_at:]
                     old_size = struct.unpack(">I", raw[:4])[0]
                     # size word excludes the 8-byte header; raw grew by 4*len(missing)
                     new_size = old_size + 4 * len(missing)

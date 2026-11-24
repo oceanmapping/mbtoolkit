@@ -926,8 +926,8 @@ def main() -> None:
                         np.nanmean(depths),
                     )
                     print(f"Depth Stats – Min: {dmin:.2f}, Max: {dmax:.2f}, Mean: {dmean:.2f}")
-                    if hasattr(dg, 'BEAM_FLAGS_ARRAY') and dg.BEAM_FLAGS_ARRAY:
-                        flags = np.array(dg.BEAM_FLAGS_ARRAY)
+                    flags = np.asarray(getattr(dg, "BEAM_FLAGS_ARRAY", []))
+                    if flags.size:
                         total = flags.size
                         bad = np.count_nonzero(flags)
                         good = total - bad
