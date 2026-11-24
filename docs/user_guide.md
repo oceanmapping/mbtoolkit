@@ -21,6 +21,30 @@ This will install:
 - `numpy` - For numerical operations
 - bundled GSF reader code in `readers/base`
 
+### Select a GSF parser
+
+All four commands accept the same backend options. The bundled `pygsf` adapter
+is the default and requires no extra parser package. Install the optional
+`gsfu` adapter on Python 3.8 or later with:
+
+```bash
+pip install ".[gsfu]"
+gsf-info --list-backends
+gsf-info data/sample.gsf --backend gsfu --depthStats
+gsf-verify profiles/xyz.json data/sample.gsf --backend pygsf
+```
+
+For checkout-based commands, use `python tools/gsf_info.py` and the same options.
+Set a session default with `MBTOOLKIT_GSF_BACKEND=gsfu`. Selection precedence is
+the explicit `--backend` option (or Python API argument), then that environment
+variable, then `pygsf`. An unavailable parser or unsupported feature produces
+an error; the toolkit never silently switches parsers.
+
+`--list-backends` also shows installed plugins. `gsflib` denotes the planned
+reference-C adapter; this repository provides its plugin contract, not a native
+binding. It is reported as unavailable until a suitable plugin is installed.
+Backend selection does not change profile requirements or repair policy.
+
 ## Available Tools
 
 The toolkit provides several command-line tools for working with GSF files:

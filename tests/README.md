@@ -43,6 +43,13 @@ pytest --cov=tools --cov-report=html
 
 ## Test Structure
 
+Backend contracts are covered by `test_backends.py`. Run the suite once with
+only core dependencies and once in an environment installed with `.[dev,gsfu]`.
+The core-only run skips optional gsfu cases. Contract fixtures are built directly
+from GSF wire layouts and exercise both adapters, checksummed records, inherited
+scale factors, normalized units and times, owned buffers, unknown records,
+explicit failure paths, and third-party plugin loading.
+
 - `test_utils.py` - Tests for utility functions (scan_subrecords, scan_subrecord_ids)
 - `test_gsf_verify.py` - Tests for profile loading and validation utilities
 - `test_gsf_repair.py` - Tests for repair functionality

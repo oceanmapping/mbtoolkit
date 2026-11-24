@@ -40,7 +40,9 @@ An open-source suite of verification, conversion, and best-practice tools for Ge
    ```bash
    pip install -r requirements.txt
    ```
-   The toolkit uses the bundled reader implementation in `readers/base`.
+   The default parser is the bundled `pygsf` reader. For optional `gsfu` support,
+   install `pip install ".[gsfu]"` and select `--backend gsfu`. All tools accept
+   `--list-backends`; see the [backend architecture](docs/developer_guide.md#configurable-parser-boundary).
 4. Verify a GSF file
    ```
    python ./tools/gsf_verify.py minimal-xyz.json path/to/data.gsf # see ./profiles

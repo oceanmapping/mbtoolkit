@@ -581,7 +581,7 @@ class SWATH_BATHYMETRY_PING :
 				self.VERTICAL_ERROR_ARRAY = self.readarray(sf.multiplier, sf.offset, datatype)
 			elif subrecord_id == 20: 
 				# print ("VE ARRAY")
-				self.VERTICAL_ERROR_ARRAY = self.readarray(sf.multiplier, sf.offset, datatype)
+				self.HORIZONTAL_ERROR_ARRAY = self.readarray(sf.multiplier, sf.offset, datatype)
 			elif subrecord_id == 21: 
 				before = self.fileptr.tell()
 				# print ("SN ARRAY")

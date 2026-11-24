@@ -19,7 +19,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from readers.base import GSFREADER
+from readers import BackendError, DecodeRequest, add_backend_arguments, open_reader
     
 # Import utility functions - handle both relative and absolute imports
 try:
@@ -74,72 +74,20 @@ def attr_map(key: str) -> str:
     """
     return key.replace("_", "")
 
-def verify(profile: str, gsf_file: str) -> None:
+def verify(profile: str, gsf_file: str, backend=None) -> None:
     profile = load_profile(profile)
     required = { r['record_id']: r for r in profile.get('required_records', []) }
 
-    reader = GSFREADER(gsf_file)
-    fh = open(gsf_file, 'rb')
     violations = []
-
-    # precompute ping header size
-    ping_hdr_fmt = ">llll5hlH3h2Hlllh"
-    ping_hdr_size = struct.calcsize(ping_hdr_fmt)
 
     seen = defaultdict(int)
 
-    while reader.moreData():
-        try:
-            nbytes, recid, dg = reader.readDatagram()
-        except Exception as e:
-            violations.append(f"Error reading datagram: {e}")
-            break
-
-        seen[recid] += 1
-
-        if recid in required:
-            rule = required[recid]
-            # attempt header-only read, with fallbacks
-            try:
-                dg.read(reader.scalefactorsd, headeronly=True)
-            except TypeError:
-                try:
-                    dg.read(reader.scalefactorsd)
-                except TypeError:
-                    dg.read()
-
-            # 1) check constraints
-            for key, expect in rule.get('constraints', {}).items():
-                attr = attr_map(key)
-                actual = getattr(dg, attr, None)
-                if actual is None:
-                    violations.append(
-                        f"Record {recid}: missing attribute '{attr}' for constraint '{key}'"
-                    )
-                elif actual != expect:
-                    violations.append(
-                        f"Record {recid}: constraint '{key}' expected {expect} but got {actual}"
-                    )
-
-            # 2) required header fields
-            for key in rule.get('required_header_fields', []):
-                attr = attr_map(key)
-                if not hasattr(dg, attr):
-                    violations.append(
-                        f"Record {recid}: missing required header field '{key}'"
-                    )
-
-            # 3) required subrecords
-            if 'required_subrecords' in rule:
-                fh.seek(dg.offset)
-                raw = fh.read(nbytes + 8)
-                subs = scan_subrecord_ids(raw, ping_hdr_size)
-                for sub in rule['required_subrecords']:
-                    rid = sub['subrecord_id']
-                    if rid not in subs:
-                        violations.append(
-                            f"Rec {recid} @offset {dg.offset}: missing subrecord '{sub['subrecord_name']}' ({rid})"
-                        )
+    decoded_types = frozenset(
+        rid for rid, rule in required.items()
+        if rule.get('constraints') or rule.get('required_header_fields')
+    )
+    with open_reader(gsf_file, backend=backend) as reader:
+        _verify_records(reader, DecodeRequest(decoded_types), required, seen, violations)
 
     for rid, rule in required.items():
         if seen[rid] == 0:
@@ -155,7 +103,44 @@ def verify(profile: str, gsf_file: str) -> None:
         for v in violations:
             print("   -", v)
 
-    fh.close()
+
+def _verify_records(reader, request, required, seen, violations):
+    for record in reader.records(request):
+        recid = record.record_id
+        seen[recid] += 1
+
+        if recid in required:
+            rule = required[recid]
+            data = record.data
+
+            # 1) check constraints
+            for key, expect in rule.get('constraints', {}).items():
+                actual = data.value(key) if data is not None else None
+                if actual is None:
+                    violations.append(
+                        f"Record {recid}: missing field '{key}' for constraint '{key}'"
+                    )
+                elif actual != expect:
+                    violations.append(
+                        f"Record {recid}: constraint '{key}' expected {expect} but got {actual}"
+                    )
+
+            # 2) required header fields
+            for key in rule.get('required_header_fields', []):
+                if data is None or not data.has_field(key):
+                    violations.append(
+                        f"Record {recid}: missing required header field '{key}'"
+                    )
+
+            # 3) required subrecords
+            if 'required_subrecords' in rule:
+                subs = scan_subrecord_ids(record.raw, reader.ping_header_size)
+                for sub in rule['required_subrecords']:
+                    rid = sub['subrecord_id']
+                    if rid not in subs:
+                        violations.append(
+                            f"Rec {recid} @offset {record.offset}: missing subrecord '{sub['subrecord_name']}' ({rid})"
+                        )
 
 def main() -> None:
     """
@@ -175,6 +160,7 @@ def main() -> None:
     )
     p.add_argument("profile", help="Profile JSON file")
     p.add_argument("gsf_file", help="GSF file to validate")
+    add_backend_arguments(p)
     args = p.parse_args()
 
     if not os.path.exists(args.profile):
@@ -184,7 +170,11 @@ def main() -> None:
         print(f"GSF file '{args.gsf_file}' not found.", file=sys.stderr)
         sys.exit(1)
     
-    verify(args.profile, args.gsf_file)
+    try:
+        verify(args.profile, args.gsf_file, backend=args.backend)
+    except (BackendError, OSError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

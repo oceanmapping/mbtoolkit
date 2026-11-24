@@ -20,8 +20,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from readers.base import (
-    GSFREADER,
+from readers import (
+    BackendError, DecodeRequest, add_backend_arguments, open_reader,
     HEADER,
     SWATH_BATHYMETRY,
     ATTITUDE,
@@ -194,11 +194,14 @@ def print_file_overview(
     subrecord_counts: Counter,
     sensor_payload_lens: dict,
     swath_meta: dict,
+    backend: str = "",
 ) -> None:
     """Print the default human-readable GSF file overview."""
     print("=== GSF File Overview ===")
     print(f"File          : {filename}")
     print(f"Size          : {_format_bytes(file_size)}")
+    if backend:
+        print(f"Parser backend: {backend}")
     if gsf_version:
         print(f"GSF version   : {gsf_version.strip()}")
 
@@ -614,9 +617,20 @@ def parse_args() -> argparse.Namespace:
             "field summaries (KMALL, EM3/EM4, R2Sonic, etc.)"
         ),
     )
+    add_backend_arguments(p)
     return p.parse_args()
 
 def main() -> None:
+    args = parse_args()
+    try:
+        with open_reader(args.filename, backend=args.backend) as reader:
+            _inspect(args, reader)
+    except (BackendError, OSError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _inspect(args, reader) -> None:
     """
     Main entry point for gsf-info tool.
     
@@ -626,7 +640,6 @@ def main() -> None:
     
     Exits with code 1 if the file is not found or if errors occur during reading.
     """
-    args = parse_args()
     overview_mode = not _detail_mode(args)
 
     if not os.path.exists(args.filename):
@@ -634,8 +647,6 @@ def main() -> None:
         sys.exit(1)
 
     file_size = os.path.getsize(args.filename)
-    fh = open(args.filename, "rb")
-    reader = GSFREADER(args.filename)
 
     datagram_counts = defaultdict(int)
     valid_depth_pings = 0
@@ -649,7 +660,7 @@ def main() -> None:
     sensor_counts = Counter()
     sensor_samples = {}
 
-    gsf_version = None
+    gsf_version = reader.version
     overview_swath_count = 0
     subrecord_counts = Counter()
     sensor_payload_lens = defaultdict(list)
@@ -665,44 +676,34 @@ def main() -> None:
         "brb_bits": None,
     }
 
-    # ping header struct (same as in pygsf)
-    ping_hdr_fmt = ">llll5hlH3h2Hlllh"
-    ping_hdr_size = struct.calcsize(ping_hdr_fmt)
-
-    while reader.moreData():
-        try:
-            nbytes, recid, dg = reader.readDatagram()
-        except Exception as e:
-            print(f"Error reading datagram: {e}", file=sys.stderr)
-            break
+    ping_hdr_size = reader.ping_header_size
+    decoded_types = set()
+    if (overview_mode or args.sensorSpecific or args.positions or args.depths
+            or args.depthStats or args.pingHeader or args.pingHeaderVerbose):
+        decoded_types.add(SWATH_BATHYMETRY)
+    if args.attitude:
+        decoded_types.add(ATTITUDE)
+    request = DecodeRequest(frozenset(decoded_types),
+                            args.depths or args.depthStats or args.pingHeaderVerbose)
+    for record in reader.records(request):
+        recid, nbytes, dg = record.record_id, record.total_size, record.data
 
         datagram_counts[recid] += 1
         name = RECORD_NAMES.get(recid, f"UNKNOWN ({recid})")
 
-        if overview_mode and recid == HEADER and gsf_version is None:
-            try:
-                dg.read()
-                gsf_version = dg.version
-            except Exception as e:
-                print(f"Error reading HEADER: {e}", file=sys.stderr)
-
         if (overview_mode or args.sensorSpecific) and recid == SWATH_BATHYMETRY:
             overview_swath_count += 1
-            fh.seek(dg.offset)
-            raw = fh.read(nbytes)
+            raw = record.raw
             _, ident = struct.unpack(">II", raw[:8])
             has_checksum = ((ident >> 31) & 1) == 1
             if swath_meta["has_checksum"] is None:
                 swath_meta["has_checksum"] = has_checksum
 
-            start = 8 + (4 if has_checksum else 0)
-            hdr = struct.unpack(ping_hdr_fmt, raw[start:start + ping_hdr_size])
-            t_sec, t_nsec = hdr[0], hdr[1]
             ts = datetime.fromtimestamp(
-                t_sec + t_nsec / 1e9, tz=timezone.utc
+                dg.value("timestamp"), tz=timezone.utc
             ).isoformat().replace("+00:00", "Z")
-            lon, lat = hdr[2] / 1e7, hdr[3] / 1e7
-            nbeams = hdr[4]
+            lon, lat = dg.value("longitude"), dg.value("latitude")
+            nbeams = dg.value("num_beams")
 
             if swath_meta["time_start"] is None:
                 swath_meta["time_start"] = ts
@@ -734,7 +735,7 @@ def main() -> None:
                     if sid not in sensor_samples:
                         sensor_samples[sid] = (
                             overview_swath_count,
-                            dg.offset,
+                            record.offset,
                             payload,
                         )
 
@@ -744,8 +745,7 @@ def main() -> None:
         # --- scale factor analysis ---
         if args.scaleFactors and recid == SWATH_BATHYMETRY:
             swath_ping_index += 1
-            fh.seek(dg.offset)
-            raw = fh.read(nbytes)
+            raw = record.raw
             subs = scan_subrecords(raw, ping_hdr_size)
             sf_payloads = [payload for sid, payload in subs if sid == 100]
             array_ids = {sid for sid, _ in subs if sid in SCALED_ARRAY_IDS}
@@ -754,7 +754,7 @@ def main() -> None:
                 if not saw_first_sf:
                     if array_ids:
                         scale_factor_oddities.append(
-                            f"ping {swath_ping_index} @0x{dg.offset:X}: "
+                            f"ping {swath_ping_index} @0x{record.offset:X}: "
                             f"scaled arrays present "
                             f"({', '.join(_subrecord_label(s) for s in sorted(array_ids))}) "
                             f"but no SCALE_FACTORS seen yet"
@@ -762,14 +762,14 @@ def main() -> None:
                 elif array_ids and not array_ids.issubset(active_sf_ids):
                     missing = sorted(array_ids - active_sf_ids)
                     scale_factor_oddities.append(
-                        f"ping {swath_ping_index} @0x{dg.offset:X}: "
+                        f"ping {swath_ping_index} @0x{record.offset:X}: "
                         f"arrays without active scale factors: "
                         f"{', '.join(_subrecord_label(s) for s in missing)}"
                     )
             else:
                 if len(sf_payloads) > 1:
                     scale_factor_oddities.append(
-                        f"ping {swath_ping_index} @0x{dg.offset:X}: "
+                        f"ping {swath_ping_index} @0x{record.offset:X}: "
                         f"{len(sf_payloads)} SCALE_FACTORS subrecords in one ping"
                     )
                 for payload in sf_payloads:
@@ -777,17 +777,17 @@ def main() -> None:
                         factors = parse_scale_factors(payload)
                     except ValueError as e:
                         scale_factor_oddities.append(
-                            f"ping {swath_ping_index} @0x{dg.offset:X}: "
+                            f"ping {swath_ping_index} @0x{record.offset:X}: "
                             f"failed to decode SCALE_FACTORS: {e}"
                         )
                         continue
                     scale_factor_oddities.extend(
-                        analyze_scale_factor_set(factors, swath_ping_index, dg.offset)
+                        analyze_scale_factor_set(factors, swath_ping_index, record.offset)
                     )
                     scale_factor_events.append(
                         {
                             "ping_index": swath_ping_index,
-                            "offset": dg.offset,
+                            "offset": record.offset,
                             "factors": factors,
                             "fingerprint": scale_factor_fingerprint(factors),
                         }
@@ -797,7 +797,7 @@ def main() -> None:
                     missing = sorted(array_ids - active_sf_ids)
                     if missing:
                         scale_factor_oddities.append(
-                            f"ping {swath_ping_index} @0x{dg.offset:X}: "
+                            f"ping {swath_ping_index} @0x{record.offset:X}: "
                             f"arrays without active scale factors: "
                             f"{', '.join(_subrecord_label(s) for s in missing)}"
                         )
@@ -805,25 +805,20 @@ def main() -> None:
         # --- handle pingHeader and pingHeaderVerbose ---
         if recid == SWATH_BATHYMETRY and (args.pingHeader or args.pingHeaderVerbose):
             # read raw bytes for this datagram
-            fh.seek(dg.offset)
-            raw = fh.read(nbytes)
+            raw = record.raw
 
             # unpack size & id / checksum
             size_word, ident = struct.unpack(">II", raw[:8])
             has_checksum = ((ident >> 31) & 1) == 1
 
-            # unpack ping header
-            start = 8 + (4 if has_checksum else 0)
-            hdr = struct.unpack(ping_hdr_fmt, raw[start:start+ping_hdr_size])
-            t_sec, t_nsec = hdr[0], hdr[1]
-            ts = datetime.fromtimestamp(t_sec + t_nsec/1e9, tz=timezone.utc)
-            lon, lat = hdr[2]/1e7, hdr[3]/1e7
-            nbeams, centre, flags = hdr[4], hdr[5], hdr[6]
-            tide, depthCorr = hdr[8]/100, hdr[9]/100
-            heading, pitch, roll = hdr[10]/100, hdr[11]/100, hdr[12]/100
-            heave, course, speed = hdr[13]/100, hdr[14]/100, hdr[15]/100
-            height, sep, gpstc = hdr[16]/100, hdr[17]/100, hdr[18]/100
-            reserved, spare = hdr[7], hdr[19]
+            ts = datetime.fromtimestamp(dg.value("timestamp"), tz=timezone.utc)
+            lon, lat = dg.value("longitude"), dg.value("latitude")
+            nbeams, centre, flags = (dg.value(key) for key in ("num_beams", "centre_beam", "ping_flags"))
+            tide, depthCorr = dg.value("tide_corrector"), dg.value("depth_corrector")
+            heading, pitch, roll = (dg.value(key) for key in ("heading", "pitch", "roll"))
+            heave, course, speed = (dg.value(key) for key in ("heave", "course", "speed"))
+            height, sep, gpstc = (dg.value(key) for key in ("height", "separation", "gps_tide_corrector"))
+            reserved, spare = dg.value("reserved"), dg.value("spare")
 
             # scan subrecords
             subs = scan_subrecords(raw, ping_hdr_size)
@@ -844,9 +839,12 @@ def main() -> None:
             print(f"Heave           (m)  : {heave:.2f}")
             print(f"Course          (°)  : {course:.2f}")
             print(f"Speed        (knots): {speed:.2f}")
-            print(f"Height          (m)  : {height:.3f}")
-            print(f"Separation      (m)  : {sep:.3f}")
-            print(f"GPS Tide Corr.  (m)  : {gpstc:.3f}")
+            if height is not None:
+                print(f"Height          (m)  : {height:.3f}")
+            if sep is not None:
+                print(f"Separation      (m)  : {sep:.3f}")
+            if gpstc is not None:
+                print(f"GPS Tide Corr.  (m)  : {gpstc:.3f}")
             print(f"Reserved             : {reserved}")
             print(f"Spare                : {spare}")
             print(f"Subrecords           : {len(subs)}")
@@ -859,54 +857,37 @@ def main() -> None:
 
             # decode & print each subrecord’s values
             if args.pingHeaderVerbose and subs:
-                # let pygsf decode into dg.*
-                reader.scalefactorsd = dg.read(reader.scalefactorsd)
                 print("\n  -- Decoded Subrecord Contents --")
                 for sid, _ in subs:
                     key = subrecord_names.get(sid)
-                    if key and hasattr(dg, key):
-                        arr = getattr(dg, key)
+                    if sid in dg.arrays:
+                        arr = dg.arrays[sid]
                         print(f"  {key:30}: {arr}")
                     else:
-                        print(f"  {sid:<3} UNKNOWN or not decoded by base library")
+                        print(f"  {sid:<3} UNKNOWN or not decoded by selected backend")
 
         # --- existing functionality preserved below ---
         if args.positions and recid == SWATH_BATHYMETRY:
             try:
-                dg.read(reader.scalefactorsd, headeronly=False)
                 print(
-                    f"Time: {dg.timestamp:.3f}, "
-                    f"Lon: {dg.longitude:.7f}, "
-                    f"Lat: {dg.latitude:.7f}"
+                    f"Time: {dg.value('timestamp'):.3f}, "
+                    f"Lon: {dg.value('longitude'):.7f}, "
+                    f"Lat: {dg.value('latitude'):.7f}"
                 )
             except Exception as e:
                 print(f"Error reading SWATH_BATHYMETRY position: {e}", file=sys.stderr)
 
         if (args.depths or args.depthStats) and recid == SWATH_BATHYMETRY:
             try:
-                reader.scalefactorsd = dg.read(reader.scalefactorsd)
-            except Exception as e:
-                print(f"Error reading SWATH_BATHYMETRY datagram: {e}", file=sys.stderr)
-                continue
-
-            try:
-                depths = np.array(dg.DEPTH_ARRAY)
+                depths = np.asarray(dg.arrays.get(1, []))
                 if depths.size == 0:
                     empty_depth_pings += 1
                     if args.depthStats:
                         print("Depth Stats – Empty depth array")
-                        for fname in [
-                            "ACROSS_TRACK_ARRAY", "ALONG_TRACK_ARRAY",
-                            "TRAVEL_TIME_ARRAY", "BEAM_FLAGS_ARRAY",
-                            "MEAN_CALIBRATED_AMPLITUDE_ARRAY",
-                            "QUALITY_FLAGS_ARRAY"
-                        ]:
-                            if hasattr(dg, fname):
-                                arr = getattr(dg, fname)
-                                if isinstance(arr, (list, np.ndarray)):
-                                    print(f"  {fname:30} len={len(arr)}")
-                                else:
-                                    print(f"  {fname:30} present but not list/ndarray")
+                        for sid in (2, 3, 4, 16, 6, 15):
+                            fname = _subrecord_label(sid)
+                            if sid in dg.arrays:
+                                print(f"  {fname:30} len={len(dg.arrays[sid])}")
                             else:
                                 print(f"  {fname:30} not present")
                     continue
@@ -926,7 +907,7 @@ def main() -> None:
                         np.nanmean(depths),
                     )
                     print(f"Depth Stats – Min: {dmin:.2f}, Max: {dmax:.2f}, Mean: {dmean:.2f}")
-                    flags = np.asarray(getattr(dg, "BEAM_FLAGS_ARRAY", []))
+                    flags = np.asarray(dg.arrays.get(16, []))
                     if flags.size:
                         total = flags.size
                         bad = np.count_nonzero(flags)
@@ -940,8 +921,10 @@ def main() -> None:
 
         if args.attitude and recid == ATTITUDE:
             try:
-                dg.read()
-                for ts, roll, pitch, heave in zip(dg.ts, dg.roll, dg.pitch, dg.heave):
+                samples = dg.attitude
+                for ts, roll, pitch, heave in zip(
+                    samples.timestamp_ns / 1e9, samples.roll, samples.pitch, samples.heave
+                ):
                     print(f"Time: {ts:.3f}, Roll: {roll:.2f}, Pitch: {pitch:.2f}, Heave: {heave:.2f}")
             except Exception as e:
                 print(f"Error reading ATTITUDE: {e}", file=sys.stderr)
@@ -964,6 +947,7 @@ def main() -> None:
             subrecord_counts,
             sensor_payload_lens,
             swath_meta,
+            backend=f"{reader.backend.name} {reader.backend.version}",
         )
 
     if args.depthStats:
@@ -984,7 +968,7 @@ def main() -> None:
             overview_swath_count,
         )
 
-    fh.close()
+
 
 
 if __name__ == "__main__":

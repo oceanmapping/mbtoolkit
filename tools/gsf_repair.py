@@ -21,7 +21,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from readers.base import GSFREADER, SWATH_BATHYMETRY
+from readers import BackendError, SWATH_BATHYMETRY, add_backend_arguments, open_reader
 
 try:
     from .utils import (
@@ -34,6 +34,7 @@ try:
         replace_or_insert_scale_factors,
         scale_factor_fingerprint,
         scan_subrecords,
+        update_datagram_header,
     )
 except ImportError:
     sys.path.insert(0, str(Path(__file__).parent))
@@ -47,6 +48,7 @@ except ImportError:
         replace_or_insert_scale_factors,
         scale_factor_fingerprint,
         scan_subrecords,
+        update_datagram_header,
     )
 
 
@@ -81,6 +83,7 @@ def parse_args() -> argparse.Namespace:
         action="store_false",
         help="Disable SCALE_FACTORS repair",
     )
+    add_backend_arguments(p)
     return p.parse_args()
 
 
@@ -96,14 +99,22 @@ def _needed_array_ids(subs: List) -> List[int]:
 
 
 def main() -> None:
+    args = parse_args()
+    try:
+        with open_reader(args.infile, backend=args.backend) as reader:
+            _repair(args, reader)
+    except (BackendError, OSError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _repair(args, reader) -> None:
     """
     Main entry point for gsf-repair tool.
 
     Repairs a GSF file by adding missing required subrecords and repairing
     SCALE_FACTORS. Prints a summary of repairs made.
     """
-    args = parse_args()
-
     for fn in (args.profile, args.infile):
         if not os.path.exists(fn):
             print(f"Error: '{fn}' not found.", file=sys.stderr)
@@ -118,12 +129,7 @@ def main() -> None:
                 for sr in rec.get("required_subrecords", [])
             ]
 
-    reader = GSFREADER(args.infile)
-    fh_in = open(args.infile, "rb")
-    fh_out = open(args.out, "wb")
-
-    ping_hdr_fmt = ">llll5hlH3h2Hlllh"
-    ping_hdr_size = struct.calcsize(ping_hdr_fmt)
+    ping_hdr_size = reader.ping_header_size
 
     fixed_counts = defaultdict(int)
     total_counts = defaultdict(int)
@@ -133,102 +139,89 @@ def main() -> None:
     sf_subrecords_inserted = 0
     active_factors = []  # inherited SCALE_FACTORS across pings
 
-    while reader.moreData():
-        try:
-            nbytes, recid, dg = reader.readDatagram()
-        except Exception as e:
-            print(f"[ERROR] reading datagram: {e}", file=sys.stderr)
-            break
+    with open(args.out, "wb") as fh_out:
+        for record in reader.records():
+            recid = record.record_id
+            total_counts[recid] += 1
 
-        total_counts[recid] += 1
+            raw = record.raw
 
-        fh_in.seek(dg.offset)
-        # nbytes from the reader is the full record length (size_word + 8).
-        # Do not read past the record or the next header gets spliced in.
-        raw = fh_in.read(nbytes)
+            if recid == SWATH_BATHYMETRY:
+                # --- profile-driven empty subrecord repair ---
+                if SWATH_BATHYMETRY in ping_rules:
+                    required = ping_rules[SWATH_BATHYMETRY]
+                    present_subs = scan_subrecords(raw, ping_hdr_size)
+                    present_ids = {sid for sid, _ in present_subs}
+                    missing = [
+                        (sid, name) for sid, name in required if sid not in present_ids
+                    ]
+                    if missing:
+                        # Insert before arrays and trailing padding. Appending at the
+                        # record end can hide new headers in padding or extend a
+                        # terminal subrecord whose declared size exceeds the record.
+                        insert_at = datagram_header_size(raw) + ping_hdr_size
+                        if present_subs and present_subs[0][0] == 100:
+                            insert_at += 4 + len(present_subs[0][1])
+                        additions = b"".join(make_empty_subrecord(sid) for sid, _name in missing)
+                        raw = raw[:insert_at] + additions + raw[insert_at:]
+                        raw = update_datagram_header(raw)
+                        fixed_counts[recid] += len(missing)
 
-        if recid == SWATH_BATHYMETRY:
-            # --- profile-driven empty subrecord repair ---
-            if SWATH_BATHYMETRY in ping_rules:
-                required = ping_rules[SWATH_BATHYMETRY]
-                present_subs = scan_subrecords(raw, ping_hdr_size)
-                present_ids = {sid for sid, _ in present_subs}
-                missing = [
-                    (sid, name) for sid, name in required if sid not in present_ids
-                ]
-                if missing:
-                    # Insert before arrays and trailing padding. Appending at the
-                    # record end can hide new headers in padding or extend a
-                    # terminal subrecord whose declared size exceeds the record.
-                    insert_at = datagram_header_size(raw) + ping_hdr_size
-                    if present_subs and present_subs[0][0] == 100:
-                        insert_at += 4 + len(present_subs[0][1])
-                    additions = b"".join(make_empty_subrecord(sid) for sid, _name in missing)
-                    raw = raw[:insert_at] + additions + raw[insert_at:]
-                    old_size = struct.unpack(">I", raw[:4])[0]
-                    # size word excludes the 8-byte header; raw grew by 4*len(missing)
-                    new_size = old_size + 4 * len(missing)
-                    raw = struct.pack(">I", new_size) + raw[4:]
-                    fixed_counts[recid] += len(missing)
+                # --- SCALE_FACTORS repair ---
+                if args.fix_scale_factors:
+                    subs = scan_subrecords(raw, ping_hdr_size)
+                    needed = _needed_array_ids(subs)
+                    sf_payloads = [pl for sid, pl in subs if sid == 100]
 
-            # --- SCALE_FACTORS repair ---
-            if args.fix_scale_factors:
-                subs = scan_subrecords(raw, ping_hdr_size)
-                needed = _needed_array_ids(subs)
-                sf_payloads = [pl for sid, pl in subs if sid == 100]
-
-                sf_parse_failed = False
-                if sf_payloads:
-                    try:
-                        existing = parse_scale_factors(sf_payloads[0])
-                    except ValueError:
-                        sf_parse_failed = True
+                    sf_parse_failed = False
+                    if sf_payloads:
+                        try:
+                            existing = parse_scale_factors(sf_payloads[0])
+                        except ValueError:
+                            sf_parse_failed = True
+                            existing = list(active_factors)
+                            sf_entries_replaced += 1  # whole payload treated as bad
+                    else:
                         existing = list(active_factors)
-                        sf_entries_replaced += 1  # whole payload treated as bad
-                else:
-                    existing = list(active_factors)
 
-                repaired, changes = repair_scale_factor_set(existing, needed)
+                    repaired, changes = repair_scale_factor_set(existing, needed)
 
-                # Track add vs replace from change messages
-                for msg in changes:
-                    if msg.startswith("added"):
-                        sf_entries_added += 1
-                    elif msg.startswith("replaced"):
-                        sf_entries_replaced += 1
+                    # Track add vs replace from change messages
+                    for msg in changes:
+                        if msg.startswith("added"):
+                            sf_entries_added += 1
+                        elif msg.startswith("replaced"):
+                            sf_entries_replaced += 1
 
-                before_fp = scale_factor_fingerprint(
-                    sorted(existing, key=lambda f: f["subrecord_id"])
-                ) if existing else tuple()
-                after_fp = scale_factor_fingerprint(repaired)
+                    before_fp = scale_factor_fingerprint(
+                        sorted(existing, key=lambda f: f["subrecord_id"])
+                    ) if existing else tuple()
+                    after_fp = scale_factor_fingerprint(repaired)
 
-                needs_write = False
-                if sf_parse_failed or changes:
-                    needs_write = True
-                elif sf_payloads and before_fp != after_fp:
-                    needs_write = True
-                elif (not sf_payloads) and needed and (
-                    not factors_to_map(active_factors).keys()
-                    >= set(needed)
-                ):
-                    # Inherited set does not cover arrays in this ping.
-                    needs_write = True
+                    needs_write = False
+                    if sf_parse_failed or changes:
+                        needs_write = True
+                    elif sf_payloads and before_fp != after_fp:
+                        needs_write = True
+                    elif (not sf_payloads) and needed and (
+                        not factors_to_map(active_factors).keys()
+                        >= set(needed)
+                    ):
+                        # Inherited set does not cover arrays in this ping.
+                        needs_write = True
 
-                if needs_write:
-                    had_sf = any(sid == 100 for sid, _ in subs)
-                    raw = replace_or_insert_scale_factors(
-                        raw, ping_hdr_size, repaired
-                    )
-                    sf_pings_touched += 1
-                    if not had_sf:
-                        sf_subrecords_inserted += 1
+                    if needs_write:
+                        had_sf = any(sid == 100 for sid, _ in subs)
+                        raw = replace_or_insert_scale_factors(
+                            raw, ping_hdr_size, repaired
+                        )
+                        sf_pings_touched += 1
+                        if not had_sf:
+                            sf_subrecords_inserted += 1
 
-                active_factors = repaired
+                    active_factors = repaired
 
-        fh_out.write(raw)
-
-    fh_in.close()
-    fh_out.close()
+            fh_out.write(raw)
 
     print(f"Repaired GSF written to: {args.out}\n")
     for rid, tot in total_counts.items():

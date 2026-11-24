@@ -21,7 +21,7 @@ def _make_swath_datagram(
     if checksum is not None:
         header_after_size += struct.pack(">I", checksum)
     body = ping_header + subrecords
-    sizeofdata = len(header_after_size) + len(body)
+    sizeofdata = len(body)
     return struct.pack(">I", sizeofdata) + header_after_size + body + extra_tail
 
 

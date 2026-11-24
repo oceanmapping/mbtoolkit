@@ -2,7 +2,13 @@
 Shared utility functions for GSF file processing.
 """
 import struct
-from typing import Dict, Iterator, List, Tuple
+from typing import Dict, List, Tuple
+
+# Backward-compatible re-exports; record framing belongs to the reader layer.
+from readers.stream import (
+    _subrecord_spans, datagram_header_size, datagram_payload_end,
+    scan_subrecord_ids, scan_subrecords, update_datagram_header,
+)
 
 
 # GSF field-size encoding in the high nibble of the scale-factor compression flag.
@@ -14,87 +20,6 @@ FIELD_SIZE_NAMES = {
 }
 
 INTENSITY_SERIES_SUBRECORD_ID = 21
-
-
-def datagram_header_size(raw: bytes) -> int:
-    """Return byte length of the GSF datagram header (size+id, plus checksum if set)."""
-    if len(raw) < 8:
-        return 8
-    _, ident = struct.unpack(">II", raw[:8])
-    has_checksum = ((ident >> 31) & 1) == 1
-    return 12 if has_checksum else 8
-
-
-def datagram_payload_end(raw: bytes) -> int:
-    """
-    Return the byte offset where this datagram ends in ``raw``.
-
-    ``raw`` is expected to start at the datagram size word. The GSF size word
-    is the number of bytes following the 8-byte size/id header.
-    """
-    if len(raw) < 8:
-        return len(raw)
-    size_word, _ = struct.unpack(">II", raw[:8])
-    return 8 + size_word
-
-
-def _subrecord_spans(raw: bytes, ping_header_size: int) -> Iterator[Tuple[int, int, int]]:
-    """Yield (id, header start, payload end), respecting record bounds and BRB padding."""
-    hdr_len = datagram_header_size(raw)
-    sub_end = datagram_payload_end(raw)
-    offset = hdr_len + ping_header_size
-    while offset + 4 <= sub_end:
-        if offset + 4 > len(raw):
-            break
-        sub_id = raw[offset]
-        length = int.from_bytes(raw[offset + 1:offset + 4], "big")
-        payload_start = offset + 4
-        payload_end = min(payload_start + length, sub_end, len(raw))
-        if length > 0 and payload_end <= payload_start:
-            break
-        yield sub_id, offset, payload_end
-        if payload_end < payload_start + length:
-            break
-        offset = payload_start + length
-        if sub_id == INTENSITY_SERIES_SUBRECORD_ID and length % 4 > 0:
-            offset += 4 - (length % 4)
-            if offset > sub_end:
-                break
-
-
-def scan_subrecords(raw: bytes, ping_header_size: int) -> List[Tuple[int, bytes]]:
-    """
-    Scan subrecords from a raw SWATH_BATHYMETRY datagram buffer.
-
-    Matches the bundled GSF reader (pygsf): stops at the declared datagram
-    boundary, does not read past truncated payloads, and applies 4-byte padding
-    after INTENSITY_SERIES (subrecord 21).
-
-    Args:
-        raw: Raw datagram buffer bytes starting at the datagram size word
-        ping_header_size: Size of the ping header in bytes
-
-    Returns:
-        List of tuples containing (subrecord_id, payload_bytes)
-    """
-    return [
-        (sid, raw[start + 4:end])
-        for sid, start, end in _subrecord_spans(raw, ping_header_size)
-    ]
-
-
-def scan_subrecord_ids(raw: bytes, ping_header_size: int) -> List[int]:
-    """
-    Scan subrecord IDs from a raw datagram buffer.
-
-    Args:
-        raw: Raw datagram buffer bytes starting at the datagram size word
-        ping_header_size: Size of the ping header in bytes
-
-    Returns:
-        List of subrecord IDs
-    """
-    return [sid for sid, _ in scan_subrecords(raw, ping_header_size)]
 
 
 def parse_scale_factors(payload: bytes) -> List[Dict]:
@@ -306,7 +231,7 @@ def replace_or_insert_scale_factors(
     subrecord list. All other bytes, including padding, are preserved. The
     datagram size word is updated.
     """
-    size_word, ident = struct.unpack(">II", raw[:8])
+    _, ident = struct.unpack(">II", raw[:8])
     has_checksum = ((ident >> 31) & 1) == 1
     hdr_len = 8 + (4 if has_checksum else 0)
     sub_start = hdr_len + ping_header_size
@@ -322,8 +247,5 @@ def replace_or_insert_scale_factors(
     start, end = span
     new_raw = bytearray(raw[:start] + replacement + raw[end:record_end])
 
-    # GSF size word is the record length excluding the 8-byte header
-    # (size + id). sniffDatagramHeader returns size_word + 8 as nbytes.
-    new_size = len(new_raw) - 8
-    struct.pack_into(">I", new_raw, 0, new_size)
-    return bytes(new_raw)
+    # Recalculate payload size and the optional checksum after the splice.
+    return update_datagram_header(new_raw)

@@ -4,6 +4,7 @@
 
 # Core dependencies
 numpy>=1.20.0
+importlib-metadata>=1.0; python_version < '3.8'
 
 # GSF reader implementation is included in readers/base
 

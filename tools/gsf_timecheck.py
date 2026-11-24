@@ -16,7 +16,10 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from readers.base import GSFREADER, SWATH_BATHYMETRY, ATTITUDE
+from readers import (
+    ATTITUDE, SWATH_BATHYMETRY, BackendError, DecodeRequest,
+    add_backend_arguments, open_reader,
+)
 
 def parse_args() -> argparse.Namespace:
     """
@@ -30,9 +33,20 @@ def parse_args() -> argparse.Namespace:
         description="Verify that ping & attitude times in a GSF file never go backwards."
     )
     p.add_argument("filename", help="Path to the GSF file")
+    add_backend_arguments(p)
     return p.parse_args()
 
 def main() -> None:
+    args = parse_args()
+    try:
+        with open_reader(args.filename, backend=args.backend) as reader:
+            _timecheck(args, reader)
+    except (BackendError, OSError) as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _timecheck(args, reader) -> None:
     """
     Main entry point for gsf-timecheck tool.
     
@@ -42,13 +56,9 @@ def main() -> None:
     
     Exits with code 1 if the file is not found or if errors occur during reading.
     """
-    args = parse_args()
-
     if not os.path.exists(args.filename):
         print(f"Error: File '{args.filename}' not found.", file=sys.stderr)
         sys.exit(1)
-
-    reader = GSFREADER(args.filename)
 
     # Ping counters
     total_pings       = 0
@@ -64,20 +74,16 @@ def main() -> None:
     last_att_ts       = None
     prev_att_ts       = -float("inf")
 
-    while reader.moreData():
-        try:
-            nbytes, recid, dg = reader.readDatagram()
-        except Exception as e:
-            print(f"[ERROR] reading datagram: {e}", file=sys.stderr)
-            break
-
+    request = DecodeRequest(frozenset({SWATH_BATHYMETRY, ATTITUDE}))
+    for record in reader.records(request):
+        recid = record.record_id
+        data = record.data
         # SWATH bathy ping → only read header (fast)
         if recid == SWATH_BATHYMETRY:
             total_pings += 1
 
             # read header only (so dg.timestamp is set, nothing more)
-            reader.scalefactorsd = dg.read(reader.scalefactorsd, True)
-            ts = dg.timestamp
+            ts = data.value("timestamp")
 
             if first_ping_ts is None:
                 first_ping_ts = ts
@@ -93,13 +99,10 @@ def main() -> None:
         elif recid == ATTITUDE:
             total_att += 1
 
-            # Note: ATTITUDE.read() takes no args
-            dg.read()
-
-            # only if ts array exists and has elements
-            if hasattr(dg, "ts") and len(dg.ts) > 0:
-                first_sample = dg.ts[0]
-                last_sample  = dg.ts[-1]
+            samples = data.attitude
+            if samples is not None and len(samples.timestamp_ns) > 0:
+                first_sample = samples.timestamp_ns[0] / 1e9
+                last_sample = samples.timestamp_ns[-1] / 1e9
 
                 if first_att_ts is None:
                     first_att_ts = first_sample

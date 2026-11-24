@@ -38,9 +38,11 @@ classifiers = [
 
 dependencies = [
     "numpy>=1.20.0",
+    "importlib-metadata>=1.0; python_version < '3.8'",
 ]
 
 [project.optional-dependencies]
+gsfu = ["gsfu>=0.5.1,<0.6"]
 dev = [
     "pytest>=7.0",
     "black>=22.0",
@@ -61,7 +63,7 @@ Repository = "https://github.com/your-org/community-gsf-toolkit"
 Issues = "https://github.com/your-org/community-gsf-toolkit/issues"
 
 [tool.setuptools]
-packages = ["tools", "readers", "readers.base"]
+packages = ["tools", "readers", "readers.base", "readers.backends"]
 include-package-data = true
 
 [tool.black]
