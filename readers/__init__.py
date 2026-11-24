@@ -41,7 +41,7 @@ def available_backends():
     plugins = _plugins()
     entries.update({name: "installed plugin" for name in plugins})
     if "gsflib" not in plugins:
-        entries["gsflib"] = "not installed; reference-C adapter plugin required"
+        entries["gsflib"] = "not installed; build plugins/gsflib with GSF 3.11 (see plugins/gsflib/README.md)"
     return entries
 
 

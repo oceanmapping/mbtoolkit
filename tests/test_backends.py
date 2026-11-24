@@ -18,7 +18,9 @@ from readers import (
 from readers.stream import iter_frames
 
 BACKENDS = ["pygsf", pytest.param("gsfu", marks=pytest.mark.skipif(
-    importlib.util.find_spec("GSFU") is None, reason="optional gsfu backend not installed"))]
+    importlib.util.find_spec("GSFU") is None, reason="optional gsfu backend not installed")),
+    pytest.param("gsflib", marks=pytest.mark.skipif(
+        "gsflib" not in readers._plugins(), reason="optional reference C plugin not installed"))]
 
 
 def record(rid, payload, checksum=False):
@@ -116,6 +118,35 @@ def test_metadata_preserves_unknown_records_and_releases_handles(make_file, back
         assert len(list(reader.records())) == 5
 
 
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_attitude_time_offsets_preserve_nanoseconds(make_file, backend):
+    source = make_file()
+    offsets = [1, 7, 29, 57, 1001, 1056, 65001, 65535]
+    payload = struct.pack(">IIH", 1_700_000_000, 987_654_321, len(offsets))
+    payload += b"".join(struct.pack(">HhhhH", offset, -123, 234, -56, 35000) for offset in offsets)
+    source.write_bytes(record(1, b"GSF-v03.11\0\0") + record(12, payload))
+    with open_reader(source, backend) as reader:
+        attitude = [r.data.attitude for r in reader.records(DecodeRequest(frozenset({12}))) if r.data][0]
+    np.testing.assert_array_equal(attitude.timestamp_ns,
+                                  [1_700_000_000_987_654_321 + offset * 1_000_000 for offset in offsets])
+    np.testing.assert_allclose(attitude.pitch, -1.23)
+    np.testing.assert_allclose(attitude.roll, 2.34)
+    np.testing.assert_allclose(attitude.heave, -.56)
+    np.testing.assert_allclose(attitude.heading, 350)
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+@pytest.mark.parametrize("checksum", [False, True])
+def test_semantic_decoding_preserves_unknown_records(make_file, backend, checksum):
+    source = make_file(checksum=checksum, unknown=True)
+    with open_reader(source, backend) as reader:
+        records = list(reader.records(DecodeRequest(frozenset({1, 2, 12}), True)))
+    assert [r.record_id for r in records] == [1, 2, 177, 2, 12]
+    assert records[2].data is None
+    assert b"".join(r.raw for r in records) == source.read_bytes()
+    np.testing.assert_array_equal(records[3].data.arrays[1], [1, 2])
+
+
 def test_selection_precedence_and_no_fallback(make_file, monkeypatch):
     source = make_file()
     monkeypatch.setenv("MBTOOLKIT_GSF_BACKEND", "does-not-exist")
@@ -202,10 +233,11 @@ def test_backend_discovery_needs_no_filename(tool):
                             capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
     assert "pygsf: bundled" in result.stdout
-    assert "gsflib: not installed" in result.stdout
+    status = "installed plugin" if "gsflib" in readers._plugins() else "not installed"
+    assert "gsflib: " + status in result.stdout
 
 
-def test_gsf2_support_is_explicit_and_gsfu_uses_short_ping_header(make_file):
+def test_gsf2_support_is_explicit_and_optional_backends_use_short_ping_header(make_file):
     source = make_file()
     frames = list(iter_frames(source))
     rewritten = []
@@ -222,8 +254,11 @@ def test_gsf2_support_is_explicit_and_gsfu_uses_short_ping_header(make_file):
         assert reader.ping_header_size == 42
         with pytest.raises(UnsupportedFeatureError, match="2.x"):
             reader.records(request)
-    if importlib.util.find_spec("GSFU") is not None:
-        with open_reader(source, backend="gsfu") as reader:
+    for backend, installed in [("gsfu", importlib.util.find_spec("GSFU") is not None),
+                               ("gsflib", "gsflib" in readers._plugins())]:
+        if not installed:
+            continue
+        with open_reader(source, backend=backend) as reader:
             pings = [r.data for r in reader.records(request) if r.data]
             assert len(pings) == 2
             assert "height" not in pings[0].fields
@@ -248,6 +283,7 @@ def test_plugin_failure_is_reported_without_fallback(make_file, monkeypatch):
         assert len(list(reader.records())) == 4
 
 
+@pytest.mark.skipif("gsflib" in readers._plugins(), reason="reference C plugin is installed")
 def test_missing_reference_c_adapter_is_a_clear_cli_error(make_file):
     script = Path(__file__).resolve().parents[1] / "tools/gsf_info.py"
     result = subprocess.run(
@@ -257,6 +293,188 @@ def test_missing_reference_c_adapter_is_a_clear_cli_error(make_file):
     assert result.returncode == 1
     assert "unavailable" in result.stderr
     assert "Traceback" not in result.stderr
+
+
+@pytest.mark.skipif("gsflib" not in readers._plugins(), reason="reference C plugin not installed")
+def test_reference_c_interleaved_readers_are_independent(make_file, tmp_path):
+    first = make_file()
+    second = tmp_path / "other.gsf"
+    # Same integers, different inherited depth multiplier in the other file.
+    second.write_bytes(first.read_bytes().replace(
+        struct.pack(">Iii", 1 << 24 | 0x20 << 16, 100, 0),
+        struct.pack(">Iii", 1 << 24 | 0x20 << 16, 200, 0)))
+    request = DecodeRequest(frozenset({2}), True)
+    with open_reader(first, "gsflib") as a, open_reader(second, "gsflib") as b:
+        ia, ib = a.records(request), b.records(request)
+        next(ia)  # raw file header
+        next(ib)
+        pa, pb = next(ia).data, next(ib).data
+        np.testing.assert_allclose(pa.arrays[1], [1, 2])
+        np.testing.assert_allclose(pb.arrays[1], [.5, 1])
+        np.testing.assert_allclose(next(ia).data.arrays[1], [1, 2])
+        np.testing.assert_allclose(next(ib).data.arrays[1], [.5, 1])
+    # Reopening the same filename also starts an independent native handle.
+    with open_reader(first, "gsflib") as a, open_reader(first, "gsflib") as b:
+        assert len(list(a.records(request))) == len(list(b.records(request))) == 4
+    assert not list(tmp_path.glob("*.nsf"))
+
+
+@pytest.mark.skipif("gsflib" not in readers._plugins(), reason="reference C plugin not installed")
+def test_reference_c_early_exit_threads_and_repeated_passes(make_file):
+    from concurrent.futures import ThreadPoolExecutor
+
+    source = make_file()
+    request = DecodeRequest(frozenset({2}), True)
+
+    def run(_):
+        with open_reader(source, "gsflib") as reader:
+            iterator = reader.records(request)
+            next(iterator)
+            ping = next(iterator).data
+            iterator.close()
+            assert reader.decoder._session is None
+            assert len(list(reader.records(request))) == 4
+            np.testing.assert_array_equal(ping.arrays[1], [1, 2])
+            return ping.fields["timestamp_ns"]
+
+    # More passes than the library's finite handle table can hold unclosed.
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        assert list(pool.map(run, range(100))) == [1_700_000_000_123_456_789] * 100
+
+
+@pytest.mark.skipif("gsflib" not in readers._plugins(), reason="reference C plugin not installed")
+def test_reference_c_missing_extension_is_explicit(make_file, monkeypatch):
+    original = builtins.__import__
+
+    def without_native(name, *args, **kwargs):
+        if name == "" and "_native" in (kwargs.get("fromlist") or (args[2] if len(args) > 2 else ())):
+            raise ImportError("deliberately unavailable")
+        return original(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", without_native)
+    with pytest.raises(BackendUnavailableError, match="compiled mbtoolkit-gsflib"):
+        open_reader(make_file(), "gsflib")
+    with open_reader(make_file(), "pygsf") as reader:
+        assert len(list(reader.records())) == 4
+
+
+@pytest.mark.skipif("gsflib" not in readers._plugins(), reason="reference C plugin not installed")
+def test_reference_c_native_error_closes_handle_without_fallback(make_file, monkeypatch):
+    request = DecodeRequest(frozenset({2}), True)
+    with open_reader(make_file(), "gsflib") as reader:
+        native = reader.decoder._native
+        original = native.read
+
+        def fail(*args):
+            raise RuntimeError("GSF error: test decode failure")
+
+        monkeypatch.setattr(native, "read", fail)
+        with pytest.raises(BackendError, match="gsflib failed on record 2.*test decode failure"):
+            list(reader.records(request))
+        assert reader.decoder._session is None
+        monkeypatch.setattr(native, "read", original)
+        assert len(list(reader.records(request))) == 4
+    reader.close()
+
+
+@pytest.mark.skipif("gsflib" not in readers._plugins(), reason="reference C plugin not installed")
+def test_reference_c_packed_quality_and_absent_arrays(make_file):
+    source = make_file()
+    frames = list(iter_frames(source))
+    # Independently encoded flags: two 2-bit values, 1 and 3, in the high nibble.
+    # Remove this fixture's two original alignment bytes before appending.
+    payload = frames[1].raw[8:-2] + subrecord(15, b"\x70")
+    header_only = frames[2].raw[8:64]
+    source.write_bytes(frames[0].raw + record(2, payload) + record(2, header_only))
+    with open_reader(source, "gsflib") as reader:
+        pings = [r.data for r in reader.records(DecodeRequest(frozenset({2}), True)) if r.data]
+    np.testing.assert_array_equal(pings[0].arrays[15], [1, 3])
+    assert pings[1].arrays == {}
+
+
+@pytest.mark.skipif("gsflib" not in readers._plugins(), reason="reference C plugin not installed")
+def test_reference_c_unprojected_brb_preserves_following_scalar_arrays(make_file):
+    source = make_file()
+    frames = list(iter_frames(source))
+    payload = frames[1].raw[8:-2]
+    intensity = b"\x08" + bytes(20 + 2 * 12)  # 8-bit, two beams with zero samples
+    brb = b"\x15" + (len(intensity) + 4).to_bytes(3, "big") + intensity
+    # Put BRB between the 80-byte scale-factor subrecord and the scalar arrays.
+    ping = record(2, payload[:136] + brb + payload[136:], checksum=True)
+    source.write_bytes(frames[0].raw + ping)
+    with open_reader(source, "gsflib") as reader:
+        records = list(reader.records(DecodeRequest(frozenset({2}), True)))
+    assert records[1].raw == ping
+    assert records[1].checksum_valid is True
+    assert records[1].data.diagnostics == ("BRB intensity series has no API v1 projection",)
+    np.testing.assert_array_equal(records[1].data.arrays[1], [1, 2])
+    np.testing.assert_allclose(records[1].data.arrays[20], [.5, .6])
+
+
+@pytest.mark.skipif("gsflib" not in readers._plugins(), reason="reference C plugin not installed")
+@pytest.mark.parametrize("compressed", [False, True])
+def test_reference_c_all_advertised_scalar_arrays(make_file, compressed):
+    source = make_file()
+    frames = list(iter_frames(source))
+    ids = set(range(1, 32)) - {21}
+    byte_ids = {6, 7, 8, 9, 10, 17, 22, 23, 24, 25, 26}
+    signed_ids = {2, 3, 5, 6, 10, 17, 24, 26}
+    specs, arrays, expected = [], [], {}
+    for sid in sorted(ids):
+        values = [-10, 20] if sid in signed_ids else [10, 20]
+        flag = 0x10 if sid in byte_ids or sid in {15, 16} else 0x20
+        if sid == 15:
+            data, values = b"\x70", [1, 3]
+        elif sid == 16:
+            data = bytes(values)
+        elif compressed:
+            flag |= 1
+            # Compression v1, order zero, Simple-16 selector 13 (two 14-bit
+            # values). Sign encoding then RLE's +1 maps [-10,20] to [20,41].
+            encoded = [(-2 * value if value < 0 else 2 * value + 1) for value in values]
+            data = b"\x20" + struct.pack(">I", 13 << 28 | encoded[0] | encoded[1] << 14)
+        else:
+            fmt = ("b" if sid in signed_ids else "B") if sid in byte_ids else (
+                "h" if sid in signed_ids else "H")
+            data = struct.pack(">" + fmt * 2, *values)
+        specs.append(struct.pack(">Iii", sid << 24 | flag << 16, 1, 0))
+        arrays.append(subrecord(sid, data))
+        expected[sid] = values
+    factors = subrecord(100, struct.pack(">I", len(specs)) + b"".join(specs))
+    source.write_bytes(frames[0].raw + record(2, frames[1].raw[8:64] + factors + b"".join(arrays)))
+    with open_reader(source, "gsflib") as reader:
+        assert reader.backend.decoded_beam_arrays == ids
+        ping = [r.data for r in reader.records(DecodeRequest(frozenset({2}), True)) if r.data][0]
+    assert ping.arrays.keys() == ids
+    for sid in ids:
+        np.testing.assert_allclose(ping.arrays[sid], expected[sid], err_msg="SID {}".format(sid))
+    for sid in {15, 16, 22, 23, 25}:
+        assert ping.arrays[sid].dtype.kind == "u"
+
+
+@pytest.mark.skipif("gsflib" not in readers._plugins(), reason="reference C plugin not installed")
+@pytest.mark.parametrize("malformation", ["zero_beams", "short_array", "short_attitude", "missing_factors"])
+def test_reference_c_rejects_invalid_counts_before_native_decode(make_file, malformation):
+    source = make_file()
+    frames = list(iter_frames(source))
+    if malformation == "short_attitude":
+        broken = record(12, frames[-1].raw[8:18])
+        types = {12}
+    else:
+        payload = bytearray(frames[1].raw[8:])
+        if malformation == "zero_beams":
+            payload[16:18] = bytes(2)
+        elif malformation == "short_array":
+            payload = payload[:56] + subrecord(1, b"")
+        else:
+            payload = frames[2].raw[8:]
+        broken = record(2, payload)
+        types = {2}
+    source.write_bytes(frames[0].raw + broken)
+    with open_reader(source, "gsflib") as reader:
+        with pytest.raises(FormatError):
+            list(reader.records(DecodeRequest(frozenset(types), True)))
+        assert len(list(reader.records())) == 2
 
 
 def test_missing_optional_dependency_does_not_affect_pygsf(make_file, monkeypatch):
@@ -283,3 +501,5 @@ def test_checksum_policy_is_shared_across_backends(make_file, backend):
     with open_reader(source, backend=backend) as reader:
         with pytest.raises(FormatError, match="checksum"):
             list(reader.records())
+        with pytest.raises(FormatError, match="checksum"):
+            list(reader.records(DecodeRequest(frozenset({2}), True)))

@@ -145,23 +145,30 @@ Factories must return a `Decoder` whose `BackendInfo.name` matches the entry-poi
 name and whose `api_version` is 1. Built-in names `pygsf` and `gsfu` are reserved.
 Discovery reads entry-point metadata; only the selected plugin is loaded.
 
-The reference-C binding is a follow-up plugin, not implemented in this change.
-Until installed, selecting `gsflib` raises `BackendUnavailableError`; there is
-no stub decoder or substitution with another library. Its implementation should:
+The optional [reference-C plugin](../plugins/gsflib/README.md) is implemented in
+`plugins/gsflib` as a separate installable package. Build it from the official
+Leidos GSF 3.11 source using `GSFLIB_SOURCE_DIR`, or link matching installed headers
+and a library using `GSFLIB_PREFIX`. The core package stays compiler-free.
 
-1. Bind an explicitly selected gsflib installation through a small compiled
-   shim built against the matching `gsf.h`, rather than duplicating its large
-   native unions and ABI layouts in Python.
-2. Own one file handle and inherited scale-factor state per reader pass. Serialize
-   access or isolate it if the linked gsflib uses shared global state.
-3. Copy decoded native buffers into `RecordData` before the next C read, and
-   release handles and allocated records on normal exit, errors, and early stop.
-4. Report the linked library version and actual capabilities. Raise
-   `UnsupportedFeatureError` for unsupported requests and `BackendUnavailableError`
-   for missing libraries; never silently downgrade checksum or compression behavior.
-5. Pass the same wire-fixture conformance tests as the Python adapters, with
-   differential tests for values, units, nanosecond times, flags, unknown records,
-   checksummed records, interleaved files, buffer ownership, and cleanup.
+Its CPython extension is compiled against `gsf.h`, `gsf_dec.h`, and `gsf_ft.h`;
+no native structure layouts are mirrored in Python. Each pass owns a read-only
+sequential handle, with no
+index sidecars. Calls retain the GIL to serialize the reference library's global
+state. The extension copies decoded buffers into Python-owned bytes before returning;
+`RecordData` then owns the NumPy arrays. Each pass owns a separate decoder file
+table, freed with `gsfFree` on close. Reference `gsfDecode*` functions receive the
+common reader's framed payloads, allowing unknown record IDs to remain raw
+without encountering `gsfRead`'s rejection of unknown IDs during record skipping.
+
+The plugin advertises the API v1 header, ping, and attitude projections for GSF
+2.x/3.x, including all 30 standard scalar beam arrays. Packed quality flags and
+compressed arrays use the reference decoder. Structured BRB intensity remains raw
+with a diagnostic and is omitted from the C projection to avoid allocating
+unprojected sample buffers. `BackendInfo.version` reports the compile-time
+`GSF_VERSION`; an externally linked library must match its headers. Headerless fragments are
+explicitly unsupported for semantic decoding. All parser and checksum errors
+remain explicit, with no fallback. Installing the plugin enables its cases in
+the shared conformance and CLI tests, plus native lifecycle and boundary tests.
 
 ### Keep parsing, validation, and writing separate
 

@@ -3,4 +3,9 @@ include LICENSE
 include requirements.txt
 recursive-include profiles *.json
 recursive-include docs *.md
+include plugins/gsflib/README.md
+include plugins/gsflib/pyproject.toml
+include plugins/gsflib/setup.py
+include plugins/gsflib/native/shim.c
+recursive-include plugins/gsflib/src *.py
 

@@ -5,3 +5,10 @@ __pycache__/
 
 # Local GSF sample data
 /data/
+
+# Local package/extension build products
+build/
+dist/
+*.egg-info/
+*.so
+*.pyd

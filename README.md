@@ -43,6 +43,8 @@ An open-source suite of verification, conversion, and best-practice tools for Ge
    The default parser is the bundled `pygsf` reader. For optional `gsfu` support,
    install `pip install ".[gsfu]"` and select `--backend gsfu`. All tools accept
    `--list-backends`; see the [backend architecture](docs/developer_guide.md#configurable-parser-boundary).
+   For the reference C library, install the optional
+   [gsflib plugin](plugins/gsflib/README.md) and select `--backend gsflib`.
 4. Verify a GSF file
    ```
    python ./tools/gsf_verify.py minimal-xyz.json path/to/data.gsf # see ./profiles

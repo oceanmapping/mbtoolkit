@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mbtoolkit-gsflib"
+version = "0.1.0"
+description = "Reference C GSF backend for mb-community-toolkit"
+readme = "README.md"
+requires-python = ">=3.7"
+license = {text = "MIT"}
+dependencies = ["mb-community-toolkit>=0.1.0"]
+
+[project.entry-points."mbtoolkit.gsf_backends"]
+gsflib = "mbtoolkit_gsflib:GsflibDecoder"
+
+[tool.setuptools.packages.find]
+where = ["src"]
