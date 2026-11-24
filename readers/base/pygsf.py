@@ -494,7 +494,9 @@ class SWATH_BATHYMETRY_PING :
 			self.fileptr.seek(self.offset + self.numbytes, 0) #move forwards to the end of the record as we cannot trust the record length from the 2024
 			return
 
-		while (self.fileptr.tell() <= self.offset + self.numbytes): #dont read past the end of the packet length.  This should never happen!
+		# A complete subrecord header must fit inside this ping. In particular,
+		# do not read the next datagram header or attempt an extra read at EOF.
+		while self.fileptr.tell() + 4 <= self.offset + self.numbytes:
 			subrecfmt = '>l'
 			subrecfmtlen = struct.calcsize(subrecfmt)
 			subrecrec_unpack = struct.Struct(subrecfmt).unpack
@@ -527,7 +529,7 @@ class SWATH_BATHYMETRY_PING :
 				self.fileptr.seek(subrecord_size, 1) #move forwards to the end of teh record
 				continue
 
-			if subrecord_id > len(self.scalefactorsd):
+			if subrecord_id not in self.scalefactorsd:
 				self.fileptr.seek(subrecord_size, 1) #move forwards to the end of teh record
 				continue
 
@@ -1098,7 +1100,9 @@ class SWATH_BATHYMETRY_PING :
 		'''
 		# https://stackoverflow.com/questions/54679949/unpacking-binary-file-using-struct-unpack-vs-np-frombuffer-vs-np-ndarray-vs-np-f
 
-		fmt = '>' + datatype
+		# GSF longs are four bytes on the wire. NumPy's 'l'/'L' use the
+		# platform C long width, which is eight bytes on many 64-bit hosts.
+		fmt = '>' + {'l': 'i4', 'L': 'u4'}.get(datatype, datatype)
 		nparr = np.fromfile(self.fileptr, dtype=np.dtype(fmt), count=self.numbeams)
 		nparr = (nparr / scale) - offset
 		# nparr = (nparr / scale) + offset  we should be subtracting not adding!!!!

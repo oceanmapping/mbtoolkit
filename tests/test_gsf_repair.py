@@ -47,11 +47,22 @@ class TestMakeEmptySubrecord:
 
 
 @pytest.mark.parametrize(
+    "ping_tail",
+    [
+        pytest.param(b"", id="no-tail"),
+        pytest.param(b"\x00\x00", id="padding"),
+        # Match exports whose terminal BRB declares one byte past the record end.
+        pytest.param(b"\x15\x00\x00\x05\x10abc", id="terminal-brb"),
+    ],
+)
+@pytest.mark.parametrize(
     "bad_payload, require_sf, expected_updates",
     [(b"", False, 1), (b"\x00\x00\x00\x01", False, 1),
      (None, True, 1), (None, False, 0)],
 )
-def test_repair_inherited_scale_factors(tmp_path, bad_payload, require_sf, expected_updates):
+def test_repair_inherited_scale_factors(
+    tmp_path, bad_payload, require_sf, expected_updates, ping_tail
+):
     def subrecord(sid, payload):
         return bytes([sid]) + len(payload).to_bytes(3, "big") + payload
 
@@ -59,7 +70,7 @@ def test_repair_inherited_scale_factors(tmp_path, bad_payload, require_sf, expec
         # One beam; the remaining ping header fields are zero.
         header = bytearray(56)
         struct.pack_into(">h", header, 16, 1)
-        content = bytes(header) + b"".join(subs)
+        content = bytes(header) + b"".join(subs) + ping_tail
         return struct.pack(">II", len(content), 2) + content
 
     factors = struct.pack(">I", 1) + b"\x01\x20\x00\x00" + struct.pack(">ii", 100, -500)
@@ -84,7 +95,11 @@ def test_repair_inherited_scale_factors(tmp_path, bad_payload, require_sf, expec
     assert "pings updated              : {}".format(expected_updates) in result.stdout
     second_subs = scan_subrecords(output[len(first):], 56)
     assert (1, b"\x00\x64") in second_subs
+    original_arrays = [(sid, payload) for sid, payload in scan_subrecords(second, 56) if sid != 100]
+    assert all(item in second_subs for item in original_arrays)
+    assert output.endswith(ping_tail)
     if expected_updates:
+        assert second_subs[0][0] == 100
         repaired_payload = next(payload for sid, payload in second_subs if sid == 100)
         assert repaired_payload == factors
         assert parse_scale_factors(repaired_payload)[0]["offset"] == -500
